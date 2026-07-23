@@ -18,16 +18,24 @@
 - [lucide-react](https://lucide.dev/) — дүрсүүд
 - Inline style дээр суурилсан өнгөний систем (`C` объект), нэмэлт CSS санг ашиглаагүй
 
-## Ашиглах
-
-`tovlorokh-khamtrakh.jsx` нь нэг файлт компонент бөгөөд `export default function App()` буцаадаг. React төсөл дотроо импортлон дуудаж ашиглана:
-
-```jsx
-import App from "./tovlorokh-khamtrakh.jsx";
-```
-
-Шаардлагатай зависимс:
+## Ажиллуулах
 
 ```bash
-npm install react lucide-react
+npm install
+npm run dev
 ```
+
+Хөтчид `http://localhost:5183` дээр нээгдэнэ. Утсан дээрээ турших бол компьютер, утас нэг Wi-Fi-д байхад `npm run dev -- --host` ашиглаад гарсан Network хаягаар утсан дээрх Chrome/Safari-аар нээнэ үү — "Нүүр дэлгэц рүү нэмэх" сонголтоор апп шиг суулгах боломжтой (PWA).
+
+Төлөв (ус, жагсаалт, жин г.м.) хөтчийн `localStorage`-д хадгалагдаж, апп хаагаад дахин нээхэд алдагдахгүй.
+
+## Технологи
+
+- React (hooks) + Vite
+- [lucide-react](https://lucide.dev/) — дүрсүүд
+- Inline style дээр суурилсан өнгөний систем (`C` объект), нэмэлт CSS санг ашиглаагүй
+- PWA: `public/manifest.webmanifest` + `public/sw.js`
+
+## Файлын бүтэц
+
+`tovlorokh-khamtrakh.jsx` нь бүх дэлгэцийг агуулсан нэг файлт React компонент (`export default function App()`). `src/main.jsx` үүнийг ачаалж, service worker-ийг бүртгэнэ.
