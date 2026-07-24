@@ -496,11 +496,13 @@ function GifScreen({ frames, setFrames, onBack }) {
         canvas.width = W;
         canvas.height = H;
         const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#F8F4FC";
+        ctx.fillRect(0, 0, W, H);
         const ir = img.width / img.height, cr = W / H;
-        let sw, sh, sx, sy;
-        if (ir > cr) { sh = img.height; sw = sh * cr; sx = (img.width - sw) / 2; sy = 0; }
-        else { sw = img.width; sh = sw / cr; sx = 0; sy = (img.height - sh) / 2; }
-        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
+        let dw, dh, dx, dy;
+        if (ir > cr) { dw = W; dh = dw / ir; dx = 0; dy = (H - dh) / 2; }
+        else { dh = H; dw = dh * ir; dx = (W - dw) / 2; dy = 0; }
+        ctx.drawImage(img, dx, dy, dw, dh);
         gif.addFrame(ctx, { delay: speed, copy: true });
       });
       gif.on("progress", (p) => setSaveProgress(p));
