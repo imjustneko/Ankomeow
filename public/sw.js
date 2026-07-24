@@ -1,4 +1,4 @@
-const CACHE = "ankomeow-v1";
+const CACHE = "ankomeow-v2";
 const SHELL = ["/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (e) => {
