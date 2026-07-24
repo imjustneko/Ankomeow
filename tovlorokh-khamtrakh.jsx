@@ -587,7 +587,14 @@ function HomeCarousel() {
   const settleTimer = useRef(null);
 
   const goTo = (i, smooth) => {
-    slideRefs.current[i]?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", inline: "center", block: "nearest" });
+    const el = slideRefs.current[i];
+    const root = trackRef.current;
+    if (!el || !root) return;
+    if (smooth) {
+      el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    } else {
+      root.scrollLeft = el.offsetLeft - (root.clientWidth - el.clientWidth) / 2;
+    }
   };
 
   useEffect(() => { goTo(n, false); }, []);
@@ -598,7 +605,7 @@ function HomeCarousel() {
       const root = trackRef.current;
       if (!root) return;
       goTo(carouselNearestIndex(root, slideRefs.current) + 1, true);
-    }, 1000);
+    }, 2000);
     return () => clearInterval(id);
   }, []);
 
