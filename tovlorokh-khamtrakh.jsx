@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { ChevronLeft, Check, Trash2, Pause, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck } from "lucide-react";
+import { ChevronLeft, Check, Trash2, Pause, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2 } from "lucide-react";
 import GIF from "gif.js";
 import gifWorkerUrl from "gif.js/dist/gif.worker.js?url";
 import { initializeApp } from "firebase/app";
@@ -278,6 +278,58 @@ function Header({ title, sub, onBack }) {
   );
 }
 
+/* ── Апп суулгах ── */
+function InstallBanner({ canInstall, isIOS, onInstall, onDismiss }) {
+  const [showIOSHelp, setShowIOSHelp] = useState(false);
+
+  if (!canInstall && !isIOS) return null;
+
+  return (
+    <div className="rounded-[22px] p-4 mb-4 relative" style={{
+      background: `linear-gradient(158deg, #F8F4FC 0%, ${C.card} 130%)`,
+      border: `1.5px solid ${C.line}`, boxShadow: "0 2px 0 rgba(92,74,58,.05), 0 1px 0 rgba(255,255,255,.8) inset",
+    }}>
+      <button onClick={onDismiss} className="absolute top-3 right-3 w-6 h-6 rounded-full flex items-center justify-center"
+        style={{ color: C.inkSoft }} aria-label="Хаах">
+        <X size={13} strokeWidth={2.4} />
+      </button>
+      <div className="flex items-center gap-3 pr-6">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.lilacDeep }}>
+          <Download size={18} strokeWidth={2.2} color="#fff" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Утсандаа суулгах</div>
+          <div className="text-[11.5px] font-medium" style={{ color: C.inkSoft }}>Апп шиг нээгээд, offline ч ажиллана</div>
+        </div>
+      </div>
+
+      {canInstall && (
+        <button onClick={onInstall}
+          className="w-full mt-3 rounded-full py-2.5 text-[12.5px] font-extrabold flex items-center justify-center gap-2 active:scale-[0.97]"
+          style={{ background: C.lilacDeep, color: "#fff", transition: "transform 150ms ease" }}>
+          <Download size={15} strokeWidth={2.4} /> Одоо суулгах
+        </button>
+      )}
+
+      {!canInstall && isIOS && (
+        <>
+          <button onClick={() => setShowIOSHelp((s) => !s)}
+            className="w-full mt-3 rounded-full py-2.5 text-[12.5px] font-extrabold flex items-center justify-center gap-2 active:scale-[0.97]"
+            style={{ background: C.lilacDeep, color: "#fff", transition: "transform 150ms ease" }}>
+            <Share2 size={15} strokeWidth={2.4} /> Яаж суулгах вэ?
+          </button>
+          {showIOSHelp && (
+            <p className="text-[11.5px] font-semibold mt-2.5 leading-relaxed" style={{ color: C.inkSoft }}>
+              Доорх <Share2 size={12} strokeWidth={2.4} style={{ display: "inline", verticalAlign: "-1px" }} /> Хуваалцах товч дараад,
+              жагсаалтаас "Нүүр дэлгэц рүү нэмэх" (Add to Home Screen) сонголтыг дарна уу.
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ── Ус ── */
 function WaterScreen({ ml, setMl, log, setLog, weight, setWeight, goal, onBack }) {
   const [spillKey, setSpillKey] = useState(0);
@@ -438,19 +490,43 @@ function ListScreen({ items, setItems, onBack }) {
 }
 
 /* ── Дэлгэцийн цаг ── */
-const APPS = [
-  { name: "Instagram", min: 42, color: C.peachDeep },
-  { name: "YouTube", min: 26, color: "#E08A8A" },
-  { name: "Messenger", min: 18, color: C.waterDeep },
-  { name: "Chrome", min: 9, color: C.sageDeep },
-  { name: "Notes", min: 5, color: C.gold },
-];
-const WEEK = [95, 142, 118, 80, 165, 210, 100];
+const APP_COLORS = [C.peachDeep, "#E08A8A", C.waterDeep, C.sageDeep, C.gold, C.lilacDeep];
+const APP_PRESETS = ["Instagram", "YouTube", "Messenger", "Chrome", "TikTok"];
 
-function ScreenTimeScreen({ onBack }) {
-  const total = APPS.reduce((s, a) => s + a.min, 0);
-  const maxW = Math.max(...WEEK);
-  const today = new Date().getDay();
+function ScreenTimeScreen({ screenApps, setScreenApps, screenHistory, onBack }) {
+  const [name, setName] = useState("");
+  const [min, setMin] = useState("");
+
+  const total = screenApps.reduce((s, a) => s + a.min, 0);
+
+  const byApp = useMemo(() => {
+    const map = new Map();
+    screenApps.forEach((a) => map.set(a.name, (map.get(a.name) || 0) + a.min));
+    return Array.from(map, ([n, m], i) => ({ name: n, min: m, color: APP_COLORS[i % APP_COLORS.length] }))
+      .sort((a, b) => b.min - a.min);
+  }, [screenApps]);
+  const topMin = Math.max(byApp[0]?.min ?? 1, 1);
+
+  const week = useMemo(() => {
+    const out = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+      out.push({ key, label: DAYS[d.getDay()][0], v: i === 0 ? total : (screenHistory[key] || 0) });
+    }
+    return out;
+  }, [screenHistory, total]);
+  const maxW = Math.max(...week.map((w) => w.v), 1);
+
+  const addEntry = () => {
+    const n = name.trim();
+    const m = Math.round(Number(min));
+    if (!n || !m || m <= 0) return;
+    setScreenApps((l) => [...l, { id: Date.now(), name: n, min: m }]);
+    setName("");
+    setMin("");
+  };
 
   return (
     <div>
@@ -464,42 +540,72 @@ function ScreenTimeScreen({ onBack }) {
           {Math.floor(total / 60)}ц {total % 60}м
         </div>
         <p className="text-[12px] mt-1.5 font-semibold" style={{ color: C.inkSoft }}>
-          Долоо хоногийн дунджаас 18 минут бага
+          Өөрөө нэмсэн бүртгэл дээр үндэслэнэ
         </p>
         <div className="flex items-end gap-2 h-[78px] mt-4">
-          {WEEK.map((v, i) => (
-            <div key={i} className="flex-1 flex flex-col items-center gap-1.5">
+          {week.map((w, i) => (
+            <div key={w.key} className="flex-1 flex flex-col items-center gap-1.5">
               <div className="w-full rounded-full" style={{
-                height: `${(v / maxW) * 56}px`,
-                background: i === today ? C.peachDeep : C.peach, opacity: i === today ? 1 : 0.5,
+                height: `${(w.v / maxW) * 56}px`,
+                background: i === 6 ? C.peachDeep : C.peach, opacity: i === 6 ? 1 : 0.5,
               }} />
-              <span className="text-[9.5px] font-bold" style={{ color: C.inkSoft }}>{DAYS[i][0]}</span>
+              <span className="text-[9.5px] font-bold" style={{ color: C.inkSoft }}>{w.label}</span>
             </div>
           ))}
         </div>
       </Card>
 
-      <div className="text-[13px] font-extrabold mb-2.5" style={{ color: C.ink }}>Аппаар</div>
-      <div className="space-y-2.5">
-        {APPS.map((a) => (
-          <Card key={a.name}>
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full shrink-0" style={{ background: a.color, opacity: 0.9 }} />
-              <div className="flex-1">
-                <div className="flex justify-between text-[13px] mb-1.5">
-                  <span className="font-extrabold" style={{ color: C.ink }}>{a.name}</span>
-                  <span className="font-bold" style={{ color: C.inkSoft }}>{a.min} мин</span>
-                </div>
-                <Bar value={a.min} max={APPS[0].min} color={a.color} />
-              </div>
-            </div>
-          </Card>
-        ))}
-      </div>
+      <Card tint="#F8F4FC" className="mb-4">
+        <div className="text-[12.5px] font-extrabold mb-2.5" style={{ color: C.ink }}>Апп нэмэх</div>
+        <div className="flex gap-1.5 mb-2.5 flex-wrap">
+          {APP_PRESETS.map((p) => (
+            <Pill key={p} onClick={() => setName(p)} active={name === p} color={C.peachDeep} className="py-1.5 px-3 text-[11.5px]">
+              {p}
+            </Pill>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Аппын нэр"
+            className="flex-1 min-w-0 rounded-full px-4 py-2.5 text-[13px] font-medium outline-none"
+            style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
+          <input value={min} onChange={(e) => setMin(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addEntry()}
+            type="number" inputMode="numeric" placeholder="мин"
+            className="w-[68px] shrink-0 rounded-full px-3 py-2.5 text-[13px] font-medium outline-none text-center"
+            style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
+          <button onClick={addEntry} className="shrink-0 active:scale-95" style={{ transition: "transform 150ms ease" }} aria-label="Нэмэх">
+            <img src={BTN_ADD} alt="Нэмэх" className="h-[42px] w-auto" />
+          </button>
+        </div>
+      </Card>
 
-      <p className="text-[11px] mt-4 leading-relaxed px-1 font-medium" style={{ color: C.inkSoft }}>
-        Демо өгөгдөл. Жинхэнэ тоог системээс авна — Android: UsageStatsManager, iOS: Screen Time API.
-      </p>
+      <div className="flex items-center justify-between mb-2.5">
+        <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Аппаар</div>
+        {screenApps.length > 0 && (
+          <button onClick={() => setScreenApps([])} className="text-[11px] font-bold flex items-center gap-1" style={{ color: C.inkSoft }}>
+            <RotateCcw size={12} strokeWidth={2.2} /> Тэглэх
+          </button>
+        )}
+      </div>
+      {byApp.length === 0 ? (
+        <p className="text-[12px] py-3 font-medium" style={{ color: C.inkSoft }}>Хоосон байна. Дээрх талбараас нэмнэ үү.</p>
+      ) : (
+        <div className="space-y-2.5">
+          {byApp.map((a) => (
+            <Card key={a.name}>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full shrink-0" style={{ background: a.color, opacity: 0.9 }} />
+                <div className="flex-1">
+                  <div className="flex justify-between text-[13px] mb-1.5">
+                    <span className="font-extrabold" style={{ color: C.ink }}>{a.name}</span>
+                    <span className="font-bold" style={{ color: C.inkSoft }}>{a.min} мин</span>
+                  </div>
+                  <Bar value={a.min} max={topMin} color={a.color} />
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1053,7 +1159,7 @@ function HomeCarousel() {
 }
 
 /* ── Профайл ── */
-function ProfileScreen({ ml, goal, items, gifCount, avatar, setAvatar, profileName, setProfileName, onBack }) {
+function ProfileScreen({ ml, goal, items, gifCount, screenApps, avatar, setAvatar, profileName, setProfileName, onBack }) {
   const [picking, setPicking] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(profileName);
@@ -1062,7 +1168,7 @@ function ProfileScreen({ ml, goal, items, gifCount, avatar, setAvatar, profileNa
   const fileRef = useRef(null);
   const deviceId = useMemo(getDeviceId, []);
   const done = items.filter((i) => i.done).length;
-  const stTotal = APPS.reduce((s, a) => s + a.min, 0);
+  const stTotal = screenApps.reduce((s, a) => s + a.min, 0);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "rooms", CHAT_ROOM, "profiles"), (snap) => {
@@ -1259,11 +1365,11 @@ function WhoAreYou({ onDone }) {
 }
 
 /* ── Нүүр ── */
-function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar, profileName }) {
+function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar, profileName, screenApps, canInstall, isIOS, isStandalone, installDismissed, onInstall, onDismissInstall }) {
   const now = new Date();
   const greet = (clock.h < 11 ? "Өглөөний мэнд" : clock.h < 18 ? "Өдрийн мэнд" : "Оройн мэнд") + (profileName ? `, ${profileName}` : "");
   const done = items.filter((i) => i.done).length;
-  const stTotal = APPS.reduce((s, a) => s + a.min, 0);
+  const stTotal = screenApps.reduce((s, a) => s + a.min, 0);
   const left = 86400 - (clock.h * 3600 + clock.m * 60 + clock.s);
 
   return (
@@ -1287,6 +1393,10 @@ function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar, p
 
       <img src={WELCOME_HERO} alt="Тавтай морил" className="w-full rounded-[22px] mb-4 object-cover"
         style={{ border: `1.5px solid ${C.line2}` }} />
+
+      {!isStandalone && !installDismissed && (
+        <InstallBanner canInstall={canInstall} isIOS={isIOS} onInstall={onInstall} onDismiss={onDismissInstall} />
+      )}
 
       {justReset && (
         <div className="rounded-full px-4 py-2.5 mb-3 text-[12.5px] font-bold text-center"
@@ -1381,6 +1491,17 @@ export default function App() {
   const [justReset, setJustReset] = useState(false);
   const [avatar, setAvatar] = useState(saved.avatar ?? IC_PROFILE);
   const [profileName, setProfileName] = useState(saved.profileName ?? "");
+  const [screenApps, setScreenApps] = useState(saved.screenApps ?? []);
+  const [screenHistory, setScreenHistory] = useState(saved.screenHistory ?? {});
+  const screenAppsRef = useRef(screenApps);
+  screenAppsRef.current = screenApps;
+  const [canInstall, setCanInstall] = useState(!!window.deferredInstallPrompt);
+  const [installDismissed, setInstallDismissed] = useState(() => localStorage.getItem("ankomeow-install-dismissed") === "1");
+  const isIOS = useMemo(() => /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream, []);
+  const isStandalone = useMemo(
+    () => window.matchMedia?.("(display-mode: standalone)").matches || window.navigator.standalone === true,
+    []
+  );
 
   const goal = useMemo(() => Math.round((weight * 33) / 50) * 50, [weight]);
 
@@ -1388,8 +1509,8 @@ export default function App() {
 
   /* төлөв бүрийг утсан дээр хадгалж, апп хаагаад дахин нээхэд алдагдахгүй */
   useEffect(() => {
-    localStorage.setItem(STORE_KEY, JSON.stringify({ ml, log, weight, items, day, avatar, profileName }));
-  }, [ml, log, weight, items, day, avatar, profileName]);
+    localStorage.setItem(STORE_KEY, JSON.stringify({ ml, log, weight, items, day, avatar, profileName, screenApps, screenHistory }));
+  }, [ml, log, weight, items, day, avatar, profileName, screenApps, screenHistory]);
 
   /* нэрээ Firestore-той синк хийж, хамтрагчийн профайл жагсаалтад мэдэгдэнэ */
   useEffect(() => {
@@ -1397,12 +1518,36 @@ export default function App() {
     setDoc(doc(db, "rooms", CHAT_ROOM, "profiles", getDeviceId()), { name: profileName }).catch(() => {});
   }, [profileName]);
 
+  /* PWA суулгах сануулгыг сонсох (Android/Chrome-д л ажиллана) */
+  useEffect(() => {
+    const onAvail = () => setCanInstall(true);
+    window.addEventListener("pwa-install-available", onAvail);
+    return () => window.removeEventListener("pwa-install-available", onAvail);
+  }, []);
+
+  const installApp = async () => {
+    const promptEvent = window.deferredInstallPrompt;
+    if (!promptEvent) return;
+    promptEvent.prompt();
+    await promptEvent.userChoice;
+    window.deferredInstallPrompt = null;
+    setCanInstall(false);
+  };
+
+  const dismissInstall = () => {
+    localStorage.setItem("ankomeow-install-dismissed", "1");
+    setInstallDismissed(true);
+  };
+
   /* УБ цагаар 00:00 болоход өдрийн бүртгэл тэглэгдэнэ */
   useEffect(() => {
     const id = setInterval(() => {
       setClock(ubParts());
       const d = ubDay();
       if (d !== day) {
+        const yesterdayTotal = screenAppsRef.current.reduce((s, a) => s + a.min, 0);
+        setScreenHistory((h) => ({ ...h, [day]: yesterdayTotal }));
+        setScreenApps([]);
         setDay(d);
         setMl(0);
         setLog([]);
@@ -1465,7 +1610,8 @@ export default function App() {
           backgroundSize: "auto, auto, cover",
           backgroundPosition: "0 0, 0 0, center",
           backgroundRepeat: "repeat, no-repeat, no-repeat",
-          border: `2.5px solid ${C.line2}`, boxShadow: "0 24px 54px rgba(92,74,58,.16)", minHeight: "760px",
+          border: `2.5px solid ${C.line2}`, boxShadow: "0 24px 54px rgba(92,74,58,.16)",
+          height: "min(760px, calc(100dvh - 48px))",
         }}>
 
         {/* macOS traffic light — бүх дэлгэц дээр байнга зүүн дээд буланд */}
@@ -1495,12 +1641,12 @@ export default function App() {
             <div className={`flex-1 px-5 pt-7 min-h-0 flex flex-col ${tab === "chat" ? "pb-3" : "pb-4 overflow-y-auto overscroll-contain"}`}
               style={tab === "chat" ? undefined : { maxHeight: "672px" }}>
               <div key={tab} className={`scr ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
-                {tab === "home" && <HomeScreen go={setTab} {...{ ml, goal, items, clock, justReset, avatar, profileName }} gifCount={frames.length} />}
+                {tab === "home" && <HomeScreen go={setTab} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, canInstall, isIOS, isStandalone, installDismissed }} onInstall={installApp} onDismissInstall={dismissInstall} gifCount={frames.length} />}
                 {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} onBack={() => setTab("home")} />}
                 {tab === "list" && <ListScreen items={items} setItems={setItems} onBack={() => setTab("home")} />}
-                {tab === "screen" && <ScreenTimeScreen onBack={() => setTab("home")} />}
+                {tab === "screen" && <ScreenTimeScreen {...{ screenApps, setScreenApps, screenHistory }} onBack={() => setTab("home")} />}
                 {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} onBack={() => setTab("home")} />}
-                {tab === "profile" && <ProfileScreen {...{ ml, goal, items, avatar, setAvatar, profileName, setProfileName }} gifCount={frames.length} onBack={() => setTab("home")} />}
+                {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, avatar, setAvatar, profileName, setProfileName }} gifCount={frames.length} onBack={() => setTab("home")} />}
                 {tab === "chat" && <ChatScreen onBack={() => setTab("home")} profileName={profileName} />}
               </div>
             </div>
