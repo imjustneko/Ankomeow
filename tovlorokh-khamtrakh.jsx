@@ -655,7 +655,7 @@ const REACTIONS = [
   { key: "kiss", label: "Үнслээ", q: "kiss cute couple anime" },
   { key: "punch", label: "Цохилоо", q: "punch funny anime" },
 ];
-const GIPHY_KEY = "dc6zaTOxFJmzC";
+const GIPHY_KEY = "uAAteEbDyzEiWuUojG6YfynP6q3Od7Wa";
 
 const chatTime = (ts) => {
   if (!ts?.toDate) return "";
