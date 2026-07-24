@@ -624,11 +624,8 @@ function HomeCarousel() {
     const el = slideRefs.current[i];
     const root = trackRef.current;
     if (!el || !root) return;
-    if (smooth) {
-      el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
-    } else {
-      root.scrollLeft = el.offsetLeft - (root.clientWidth - el.clientWidth) / 2;
-    }
+    const target = el.offsetLeft - (root.clientWidth - el.clientWidth) / 2;
+    root.scrollTo({ left: target, behavior: smooth ? "smooth" : "auto" });
   };
 
   useEffect(() => { goTo(n, false); }, []);
@@ -692,7 +689,8 @@ function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset }) {
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-4">
+      <div className="sticky top-0 z-10 -mx-5 -mt-7 px-5 pt-7 pb-1 flex items-center gap-3"
+        style={{ background: "rgba(253,248,239,.88)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)" }}>
         <img src={LOGO} alt="Төвлөрөх Хамтрах" className="w-[52px] h-[52px] rounded-[18px] object-cover shrink-0"
           style={{ border: `1.5px solid ${C.line2}` }} />
         <div className="flex-1">
