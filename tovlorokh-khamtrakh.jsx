@@ -683,7 +683,7 @@ const compressImage = (file, maxDim, quality) => new Promise((resolve, reject) =
   reader.readAsDataURL(file);
 });
 
-function ChatScreen({ onBack }) {
+function ChatScreen({ onBack, profileName }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [showReact, setShowReact] = useState(false);
@@ -724,7 +724,7 @@ function ChatScreen({ onBack }) {
 
   const send = (payload) => {
     addDoc(collection(db, "rooms", CHAT_ROOM, "messages"), {
-      sender: deviceId, createdAt: serverTimestamp(), ...payload,
+      sender: deviceId, senderName: profileName || "Нэргүй", createdAt: serverTimestamp(), ...payload,
     }).catch(() => {});
   };
 
@@ -790,6 +790,9 @@ function ChatScreen({ onBack }) {
             const seen = mine && m.createdAt && partnerSeenAt && m.createdAt.toMillis() <= partnerSeenAt.toMillis();
             return (
               <div key={m.id} className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
+                {!mine && m.senderName && (
+                  <div className="text-[9.5px] font-bold mb-1 px-1" style={{ color: C.inkSoft }}>{m.senderName}</div>
+                )}
                 <div className={`max-w-[75%] rounded-[18px] text-[13px] font-semibold ${media ? "p-1.5" : "px-3.5 py-2.5"}`}
                   style={{
                     background: mine ? C.lilacDeep : C.card, color: mine ? "#fff" : C.ink,
@@ -1013,8 +1016,10 @@ function HomeCarousel() {
 }
 
 /* ── Профайл ── */
-function ProfileScreen({ ml, goal, items, gifCount, avatar, setAvatar, onBack }) {
+function ProfileScreen({ ml, goal, items, gifCount, avatar, setAvatar, profileName, setProfileName, onBack }) {
   const [picking, setPicking] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(profileName);
   const fileRef = useRef(null);
   const done = items.filter((i) => i.done).length;
   const stTotal = APPS.reduce((s, a) => s + a.min, 0);
@@ -1025,6 +1030,12 @@ function ProfileScreen({ ml, goal, items, gifCount, avatar, setAvatar, onBack })
     const reader = new FileReader();
     reader.onload = () => { setAvatar(reader.result); setPicking(false); };
     reader.readAsDataURL(file);
+  };
+
+  const saveName = () => {
+    const n = nameDraft.trim();
+    if (n) setProfileName(n);
+    setEditingName(false);
   };
 
   return (
@@ -1042,7 +1053,24 @@ function ProfileScreen({ ml, goal, items, gifCount, avatar, setAvatar, onBack })
           </span>
         </button>
         <div className="text-center">
-          <div className="text-[17px] font-extrabold" style={{ color: C.ink }}>Хос апп</div>
+          {editingName ? (
+            <div className="flex items-center gap-1.5">
+              <input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && saveName()} autoFocus
+                className="text-[14px] font-extrabold text-center rounded-full px-3 py-1 outline-none"
+                style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink, width: 140 }} />
+              <button onClick={saveName} className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+                style={{ background: C.lilacDeep, color: "#fff" }} aria-label="Хадгалах">
+                <Check size={13} strokeWidth={2.6} />
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => { setNameDraft(profileName); setEditingName(true); }}
+              className="text-[17px] font-extrabold flex items-center gap-1.5 mx-auto active:scale-95"
+              style={{ color: C.ink, transition: "transform 150ms ease" }}>
+              {profileName || "Нэргүй"} <Pencil size={12} strokeWidth={2.4} style={{ color: C.inkSoft }} />
+            </button>
+          )}
           <div className="text-[12px] font-semibold" style={{ color: C.inkSoft }}>Төвлөрөх Хамтрах</div>
         </div>
       </div>
@@ -1096,31 +1124,99 @@ function ProfileScreen({ ml, goal, items, gifCount, avatar, setAvatar, onBack })
   );
 }
 
+/* ── Та хэн бэ (нэг удаагийн нэвтрэлт, нууц үггүй) ── */
+function WhoAreYou({ onDone }) {
+  const [name, setName] = useState("");
+  const [avatar, setAvatarSel] = useState(AVATARS[0]);
+  const fileRef = useRef(null);
+
+  const onUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setAvatarSel(reader.result);
+    reader.readAsDataURL(file);
+  };
+
+  const submit = () => {
+    const n = name.trim();
+    if (!n) return;
+    onDone(n, avatar);
+  };
+
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center min-h-0 text-center">
+      <img src={LOGO} alt="" className="w-14 h-14 rounded-[18px] object-cover mb-3"
+        style={{ border: `1.5px solid ${C.line2}` }} />
+      <h1 className="text-[19px] font-extrabold mb-1" style={{ color: C.ink }}>Та хэн бэ?</h1>
+      <p className="text-[12px] font-semibold mb-4" style={{ color: C.inkSoft }}>Нэр, зургаа сонгоод эхэлье</p>
+
+      <img src={avatar} alt="" className="w-[76px] h-[76px] rounded-[24px] object-cover mb-3"
+        style={{ border: `2px solid ${C.line2}` }} />
+
+      <input value={name} onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Нэрээ бичих..."
+        className="w-full max-w-[240px] rounded-full px-4 py-2.5 text-[13.5px] font-medium text-center outline-none mb-4"
+        style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
+
+      <div className="grid grid-cols-4 gap-2 mb-3" style={{ maxWidth: 260 }}>
+        {AVATARS.map((src, i) => (
+          <button key={i} onClick={() => setAvatarSel(src)}
+            className="rounded-2xl overflow-hidden active:scale-95"
+            style={{ border: `2px solid ${avatar === src ? C.peachDeep : C.line}`, transition: "transform 150ms ease" }}>
+            <img src={src} alt="" className="w-full aspect-square object-cover" />
+          </button>
+        ))}
+      </div>
+
+      <button onClick={() => fileRef.current?.click()}
+        className="rounded-full px-4 py-2 text-[11.5px] font-extrabold flex items-center gap-1.5 active:scale-[0.97] mb-5"
+        style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink, transition: "transform 150ms ease" }}>
+        <Upload size={13} strokeWidth={2.4} /> Өөрийн зураг оруулах
+      </button>
+      <input ref={fileRef} type="file" accept="image/*" onChange={onUpload} className="hidden" />
+
+      <button onClick={submit} disabled={!name.trim()}
+        className="w-full max-w-[240px] rounded-full py-3 text-[13.5px] font-extrabold active:scale-[0.97] disabled:opacity-40"
+        style={{ background: C.lilacDeep, color: "#fff", transition: "transform 150ms ease" }}>
+        Эхлэх
+      </button>
+    </div>
+  );
+}
+
 /* ── Нүүр ── */
-function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar }) {
+function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar, profileName }) {
   const now = new Date();
-  const greet = clock.h < 11 ? "Өглөөний мэнд" : clock.h < 18 ? "Өдрийн мэнд" : "Оройн мэнд";
+  const greet = (clock.h < 11 ? "Өглөөний мэнд" : clock.h < 18 ? "Өдрийн мэнд" : "Оройн мэнд") + (profileName ? `, ${profileName}` : "");
   const done = items.filter((i) => i.done).length;
   const stTotal = APPS.reduce((s, a) => s + a.min, 0);
   const left = 86400 - (clock.h * 3600 + clock.m * 60 + clock.s);
 
   return (
     <div>
-      <div className="sticky top-0 z-10 -mx-5 -mt-7 px-5 pt-7 pb-1 flex items-center gap-3"
+      <div className="sticky top-0 z-10 -mx-5 -mt-7 px-5 pt-4 pb-1 flex flex-col gap-2.5"
         style={{ background: "rgba(253,248,239,.55)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)" }}>
-        <img src={LOGO} alt="Төвлөрөх Хамтрах" className="w-[52px] h-[52px] rounded-[18px] object-cover shrink-0"
-          style={{ border: `1.5px solid ${C.line2}` }} />
-        <div className="flex-1">
-          <p className="text-[11px] font-bold tracking-wide" style={{ color: C.inkSoft, letterSpacing: ".06em" }}>
-            {now.getMonth() + 1}-Р САРЫН {now.getDate()} · {DAYS[now.getDay()].toUpperCase()}
-          </p>
-          <h1 className="text-[24px] font-extrabold leading-tight" style={{ color: C.ink }}>{greet}</h1>
+        <div className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#FF5F57" }} />
+          <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#FEBC2E" }} />
+          <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#28C840" }} />
         </div>
-        <button onClick={() => go("profile")} className="shrink-0 active:scale-95" aria-label="Профайл"
-          style={{ transition: "transform 150ms ease" }}>
-          <img src={avatar} alt="" className="w-9 h-9 rounded-2xl object-cover"
+        <div className="flex items-center gap-3">
+          <img src={LOGO} alt="Төвлөрөх Хамтрах" className="w-[52px] h-[52px] rounded-[18px] object-cover shrink-0"
             style={{ border: `1.5px solid ${C.line2}` }} />
-        </button>
+          <div className="flex-1">
+            <p className="text-[11px] font-bold tracking-wide" style={{ color: C.inkSoft, letterSpacing: ".06em" }}>
+              {now.getMonth() + 1}-Р САРЫН {now.getDate()} · {DAYS[now.getDay()].toUpperCase()}
+            </p>
+            <h1 className="text-[24px] font-extrabold leading-tight" style={{ color: C.ink }}>{greet}</h1>
+          </div>
+          <button onClick={() => go("profile")} className="shrink-0 active:scale-95" aria-label="Профайл"
+            style={{ transition: "transform 150ms ease" }}>
+            <img src={avatar} alt="" className="w-9 h-9 rounded-2xl object-cover"
+              style={{ border: `1.5px solid ${C.line2}` }} />
+          </button>
+        </div>
       </div>
 
       <img src={WELCOME_HERO} alt="Тавтай морил" className="w-full rounded-[22px] mb-4 object-cover"
@@ -1218,6 +1314,7 @@ export default function App() {
   const [clock, setClock] = useState(ubParts());
   const [justReset, setJustReset] = useState(false);
   const [avatar, setAvatar] = useState(saved.avatar ?? IC_PROFILE);
+  const [profileName, setProfileName] = useState(saved.profileName ?? "");
 
   const goal = useMemo(() => Math.round((weight * 33) / 50) * 50, [weight]);
 
@@ -1225,8 +1322,8 @@ export default function App() {
 
   /* төлөв бүрийг утсан дээр хадгалж, апп хаагаад дахин нээхэд алдагдахгүй */
   useEffect(() => {
-    localStorage.setItem(STORE_KEY, JSON.stringify({ ml, log, weight, items, day, avatar }));
-  }, [ml, log, weight, items, day, avatar]);
+    localStorage.setItem(STORE_KEY, JSON.stringify({ ml, log, weight, items, day, avatar, profileName }));
+  }, [ml, log, weight, items, day, avatar, profileName]);
 
   /* УБ цагаар 00:00 болоход өдрийн бүртгэл тэглэгдэнэ */
   useEffect(() => {
@@ -1289,7 +1386,7 @@ export default function App() {
         .hcarousel::-webkit-scrollbar{display:none}
       `}</style>
 
-      <div className="w-full max-w-[400px] rounded-[38px] overflow-hidden flex flex-col relative"
+      <div className="w-full max-w-[400px] rounded-[46px] overflow-hidden flex flex-col relative"
         style={{
           backgroundImage: `${GRAIN}, linear-gradient(180deg, rgba(253,248,239,.82) 0%, rgba(244,234,218,.88) 100%), url(${BG_MAIN})`,
           backgroundBlendMode: "multiply, normal, normal",
@@ -1310,40 +1407,48 @@ export default function App() {
           <LoadingSequence />
         </div>
 
-        <div className={`flex-1 px-5 pt-7 min-h-0 flex flex-col ${tab === "chat" ? "pb-3" : "pb-4 overflow-y-auto"}`}
-          style={tab === "chat" ? undefined : { maxHeight: "672px" }}>
-          <div key={tab} className={`scr ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
-            {tab === "home" && <HomeScreen go={setTab} {...{ ml, goal, items, clock, justReset, avatar }} gifCount={frames.length} />}
-            {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} onBack={() => setTab("home")} />}
-            {tab === "list" && <ListScreen items={items} setItems={setItems} onBack={() => setTab("home")} />}
-            {tab === "screen" && <ScreenTimeScreen onBack={() => setTab("home")} />}
-            {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} onBack={() => setTab("home")} />}
-            {tab === "profile" && <ProfileScreen {...{ ml, goal, items, avatar, setAvatar }} gifCount={frames.length} onBack={() => setTab("home")} />}
-            {tab === "chat" && <ChatScreen onBack={() => setTab("home")} />}
+        {!profileName ? (
+          <div className="flex-1 px-5 pt-7 pb-6 min-h-0 flex flex-col">
+            <WhoAreYou onDone={(n, av) => { setProfileName(n); setAvatar(av); }} />
           </div>
-        </div>
+        ) : (
+          <>
+            <div className={`flex-1 px-5 pt-7 min-h-0 flex flex-col ${tab === "chat" ? "pb-3" : "pb-4 overflow-y-auto"}`}
+              style={tab === "chat" ? undefined : { maxHeight: "672px" }}>
+              <div key={tab} className={`scr ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
+                {tab === "home" && <HomeScreen go={setTab} {...{ ml, goal, items, clock, justReset, avatar, profileName }} gifCount={frames.length} />}
+                {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} onBack={() => setTab("home")} />}
+                {tab === "list" && <ListScreen items={items} setItems={setItems} onBack={() => setTab("home")} />}
+                {tab === "screen" && <ScreenTimeScreen onBack={() => setTab("home")} />}
+                {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} onBack={() => setTab("home")} />}
+                {tab === "profile" && <ProfileScreen {...{ ml, goal, items, avatar, setAvatar, profileName, setProfileName }} gifCount={frames.length} onBack={() => setTab("home")} />}
+                {tab === "chat" && <ChatScreen onBack={() => setTab("home")} profileName={profileName} />}
+              </div>
+            </div>
 
-        {tab !== "chat" && (
-          <nav className="flex justify-around items-center gap-1 py-2.5 px-3 mx-4 mb-4 rounded-full shrink-0"
-            style={{ background: C.card, border: `1.5px solid ${C.line}`, boxShadow: "0 10px 24px rgba(92,74,58,.14)" }}>
-            {nav.map(({ id, icon, label, c, c2 }) => {
-              const on = tab === id;
-              return (
-                <button key={id} onClick={() => setTab(id)}
-                  className="flex flex-col items-center gap-1 px-1.5 py-1 rounded-2xl">
-                  <span className="w-9 h-9 rounded-2xl flex items-center justify-center overflow-hidden"
-                    style={{
-                      background: on ? `linear-gradient(155deg, ${c2 || c} 0%, ${c} 100%)` : C.cardIn,
-                      boxShadow: on ? "0 3px 8px rgba(92,74,58,.22)" : "none",
-                      transition: "background 220ms ease, box-shadow 220ms ease",
-                    }}>
-                    <img src={icon} alt="" className="w-full h-full object-cover" />
-                  </span>
-                  <span className="text-[9px] font-extrabold" style={{ color: on ? C.ink : C.inkSoft }}>{label}</span>
-                </button>
-              );
-            })}
-          </nav>
+            {tab !== "chat" && (
+              <nav className="flex justify-around items-center gap-1 py-2.5 px-3 mx-4 mb-4 rounded-full shrink-0"
+                style={{ background: C.card, border: `1.5px solid ${C.line}`, boxShadow: "0 10px 24px rgba(92,74,58,.14)" }}>
+                {nav.map(({ id, icon, label, c, c2 }) => {
+                  const on = tab === id;
+                  return (
+                    <button key={id} onClick={() => setTab(id)}
+                      className="flex flex-col items-center gap-1 px-1.5 py-1 rounded-2xl">
+                      <span className="w-9 h-9 rounded-2xl flex items-center justify-center overflow-hidden"
+                        style={{
+                          background: on ? `linear-gradient(155deg, ${c2 || c} 0%, ${c} 100%)` : C.cardIn,
+                          boxShadow: on ? "0 3px 8px rgba(92,74,58,.22)" : "none",
+                          transition: "background 220ms ease, box-shadow 220ms ease",
+                        }}>
+                        <img src={icon} alt="" className="w-full h-full object-cover" />
+                      </span>
+                      <span className="text-[9px] font-extrabold" style={{ color: on ? C.ink : C.inkSoft }}>{label}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+            )}
+          </>
         )}
       </div>
     </div>
