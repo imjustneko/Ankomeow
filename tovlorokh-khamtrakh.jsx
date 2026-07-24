@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { ChevronLeft, Check, Trash2, Pause, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2 } from "lucide-react";
+import { ChevronLeft, Check, Trash2, Pause, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut } from "lucide-react";
 import GIF from "gif.js";
 import gifWorkerUrl from "gif.js/dist/gif.worker.js?url";
 import { initializeApp } from "firebase/app";
@@ -1195,9 +1195,17 @@ function ProfileScreen({ ml, goal, items, gifCount, screenApps, avatar, setAvata
     setEditingName(false);
   };
 
+  const exitApp = () => { window.close(); };
+
   return (
     <div>
-      <Header title="Профайл" onBack={onBack} />
+      <div className="flex items-start justify-between">
+        <Header title="Профайл" onBack={onBack} />
+        <button onClick={exitApp} className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 active:scale-95"
+          style={{ border: `1.6px solid ${C.line2}`, color: C.peachDeep, transition: "transform 150ms ease" }} aria-label="Гарах">
+          <LogOut size={16} strokeWidth={2.2} />
+        </button>
+      </div>
 
       <div className="flex flex-col items-center gap-3 mb-4">
         <button onClick={() => setPicking((p) => !p)} className="relative active:scale-95" aria-label="Зураг солих"
@@ -1568,7 +1576,7 @@ export default function App() {
   ];
 
   return (
-    <div className="w-full min-h-screen flex items-start justify-center py-6 px-4"
+    <div className="w-full min-h-screen flex items-start justify-center app-shell"
       style={{
         background: `linear-gradient(160deg, ${C.paper2} 0%, #ECE0CC 100%)`,
         fontFamily: "'Manrope','Inter',system-ui,-apple-system,sans-serif",
@@ -1601,17 +1609,26 @@ export default function App() {
         ::-webkit-scrollbar{height:5px;width:5px} ::-webkit-scrollbar-thumb{background:${C.line2};border-radius:99px}
         .hcarousel{scrollbar-width:none;scroll-behavior:smooth}
         .hcarousel::-webkit-scrollbar{display:none}
+        .app-shell{padding:24px 16px}
+        .app-frame{
+          border-radius:46px;
+          border:2.5px solid ${C.line2};
+          box-shadow:0 24px 54px rgba(92,74,58,.16);
+          height:min(760px, calc(100dvh - 48px));
+        }
+        @media (max-width:640px){
+          .app-shell{padding:0;min-height:100dvh;min-height:100svh}
+          .app-frame{max-width:100%;height:100dvh;height:100svh;border-radius:0;border:none;box-shadow:none}
+        }
       `}</style>
 
-      <div className="w-full max-w-[400px] rounded-[46px] overflow-hidden flex flex-col relative"
+      <div className="w-full max-w-[400px] overflow-hidden flex flex-col relative app-frame"
         style={{
           backgroundImage: `${GRAIN}, linear-gradient(180deg, rgba(253,248,239,.82) 0%, rgba(244,234,218,.88) 100%), url(${BG_MAIN})`,
           backgroundBlendMode: "multiply, normal, normal",
           backgroundSize: "auto, auto, cover",
           backgroundPosition: "0 0, 0 0, center",
           backgroundRepeat: "repeat, no-repeat, no-repeat",
-          border: `2.5px solid ${C.line2}`, boxShadow: "0 24px 54px rgba(92,74,58,.16)",
-          height: "min(760px, calc(100dvh - 48px))",
         }}>
 
         {/* macOS traffic light — бүх дэлгэц дээр байнга зүүн дээд буланд */}
@@ -1638,8 +1655,7 @@ export default function App() {
           </div>
         ) : (
           <>
-            <div className={`flex-1 px-5 pt-7 min-h-0 flex flex-col ${tab === "chat" ? "pb-3" : "pb-4 overflow-y-auto overscroll-contain"}`}
-              style={tab === "chat" ? undefined : { maxHeight: "672px" }}>
+            <div className={`flex-1 px-5 pt-7 min-h-0 flex flex-col ${tab === "chat" ? "pb-3" : "pb-4 overflow-y-auto overscroll-contain"}`}>
               <div key={tab} className={`scr ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
                 {tab === "home" && <HomeScreen go={setTab} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, canInstall, isIOS, isStandalone, installDismissed }} onInstall={installApp} onDismissInstall={dismissInstall} gifCount={frames.length} />}
                 {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} onBack={() => setTab("home")} />}
