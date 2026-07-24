@@ -1,7 +1,32 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { ChevronLeft, Check, Trash2, Pause, Upload, RotateCcw, X, MapPin, Pencil } from "lucide-react";
+import { ChevronLeft, Check, Trash2, Pause, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle } from "lucide-react";
 import GIF from "gif.js";
 import gifWorkerUrl from "gif.js/dist/gif.worker.js?url";
+import { initializeApp } from "firebase/app";
+import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit, serverTimestamp } from "firebase/firestore";
+
+/* ── Firebase (хос chat) ── */
+const firebaseConfig = {
+  apiKey: "AIzaSyAr_ryueRKTmjdFawhcqjXMag0mVS6lDzo",
+  authDomain: "ankomeow-9852b.firebaseapp.com",
+  projectId: "ankomeow-9852b",
+  storageBucket: "ankomeow-9852b.firebasestorage.app",
+  messagingSenderId: "905222050926",
+  appId: "1:905222050926:web:de0f3841c701fa2c18027f",
+  measurementId: "G-ZQ7BB8B1ER",
+};
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp);
+const CHAT_ROOM = "ankomeow-couple";
+
+const getDeviceId = () => {
+  let id = localStorage.getItem("ankomeow-device-id");
+  if (!id) {
+    id = "u" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem("ankomeow-device-id", id);
+  }
+  return id;
+};
 
 /* ── хэрэглэгчийн зурган эх сурвалж (лого болон section icon-ууд) ── */
 const LOGO = "data:image/webp;base64,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";
@@ -624,6 +649,127 @@ function GifScreen({ frames, setFrames, onBack }) {
   );
 }
 
+/* ── Чат ── */
+const REACTIONS = [
+  { key: "poke", label: "Тэмтэрлээ" },
+  { key: "kiss", label: "Үнслээ" },
+  { key: "punch", label: "Цохилоо" },
+];
+
+function ChatScreen({ onBack }) {
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState("");
+  const [showReact, setShowReact] = useState(false);
+  const deviceId = useMemo(getDeviceId, []);
+  const listRef = useRef(null);
+
+  useEffect(() => {
+    const q = query(collection(db, "rooms", CHAT_ROOM, "messages"), orderBy("createdAt", "desc"), limit(100));
+    const unsub = onSnapshot(q, (snap) => {
+      setMessages(snap.docs.map((d) => ({ id: d.id, ...d.data() })).reverse());
+    }, () => {});
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages.length]);
+
+  const send = (payload) => {
+    addDoc(collection(db, "rooms", CHAT_ROOM, "messages"), {
+      sender: deviceId, createdAt: serverTimestamp(), ...payload,
+    }).catch(() => {});
+  };
+
+  const onSend = () => {
+    const t = text.trim();
+    if (!t) return;
+    send({ type: "text", text: t });
+    setText("");
+  };
+
+  const sendReaction = (r) => {
+    send({ type: "reaction", key: r.key, label: r.label });
+    setShowReact(false);
+  };
+
+  const sendLocation = () => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition((p) => {
+      send({ type: "location", lat: p.coords.latitude, lng: p.coords.longitude });
+    });
+  };
+
+  return (
+    <div className="flex flex-col h-full">
+      <Header title="Чат" sub="Хайртай хүнтэйгээ шууд бичих" onBack={onBack} />
+
+      <div ref={listRef} className="flex-1 overflow-y-auto space-y-2 mb-3" style={{ minHeight: 320, maxHeight: 420 }}>
+        {messages.length === 0 ? (
+          <p className="text-[12px] py-8 text-center font-medium" style={{ color: C.inkSoft }}>
+            Одоогоор мессеж алга. Эхний мессежээ бичээрэй.
+          </p>
+        ) : (
+          messages.map((m) => {
+            const mine = m.sender === deviceId;
+            return (
+              <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                <div className="max-w-[75%] rounded-[18px] px-3.5 py-2.5 text-[13px] font-semibold"
+                  style={{
+                    background: mine ? C.lilacDeep : C.card, color: mine ? "#fff" : C.ink,
+                    border: mine ? "none" : `1.5px solid ${C.line}`,
+                  }}>
+                  {m.type === "text" && m.text}
+                  {m.type === "reaction" && <span className="italic">*{m.label}*</span>}
+                  {m.type === "location" && (
+                    <span className="flex items-center gap-1.5">
+                      <MapPin size={13} strokeWidth={2.4} /> {m.lat?.toFixed(4)}, {m.lng?.toFixed(4)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {showReact && (
+        <div className="flex gap-2 mb-2">
+          {REACTIONS.map((r) => (
+            <Pill key={r.key} onClick={() => sendReaction(r)} className="flex-1 py-2 text-[12px]">{r.label}</Pill>
+          ))}
+        </div>
+      )}
+
+      <div className="flex gap-2 items-center">
+        <button onClick={() => setShowReact((s) => !s)}
+          className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center active:scale-95"
+          style={{
+            background: showReact ? C.lilacDeep : C.card, border: `1.8px solid ${C.line2}`,
+            color: showReact ? "#fff" : C.ink, transition: "transform 150ms ease",
+          }} aria-label="Реакц">
+          <Heart size={17} strokeWidth={2.2} />
+        </button>
+        <button onClick={sendLocation}
+          className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center active:scale-95"
+          style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink, transition: "transform 150ms ease" }}
+          aria-label="Байршил илгээх">
+          <MapPin size={17} strokeWidth={2.2} />
+        </button>
+        <input value={text} onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && onSend()} placeholder="Мессеж бичих..."
+          className="flex-1 rounded-full px-4 py-2.5 text-[13.5px] font-medium outline-none"
+          style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
+        <button onClick={onSend}
+          className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center active:scale-95"
+          style={{ background: C.lilacDeep, color: "#fff", transition: "transform 150ms ease" }} aria-label="Илгээх">
+          <Send size={16} strokeWidth={2.4} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ── Байршил ── */
 function LocationCard() {
   const [s, setS] = useState({ status: "idle" });
@@ -930,6 +1076,18 @@ function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar })
 
       <HomeCarousel />
 
+      <Card tint="#F8F4FC" className="mb-3" onClick={() => go("chat")}>
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: C.lilacDeep }}>
+            <MessageCircle size={17} strokeWidth={2.2} color="#fff" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Чат</div>
+            <div className="text-[11.5px] truncate font-medium" style={{ color: C.inkSoft }}>Хайртай хүнтэйгээ шууд бичих</div>
+          </div>
+        </div>
+      </Card>
+
       <div className="mb-3"><LocationCard /></div>
 
       <div className="text-center text-[11px] font-bold pb-1" style={{ color: C.inkSoft }}>
@@ -1062,6 +1220,7 @@ export default function App() {
             {tab === "screen" && <ScreenTimeScreen onBack={() => setTab("home")} />}
             {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} onBack={() => setTab("home")} />}
             {tab === "profile" && <ProfileScreen {...{ ml, goal, items, avatar, setAvatar }} gifCount={frames.length} onBack={() => setTab("home")} />}
+            {tab === "chat" && <ChatScreen onBack={() => setTab("home")} />}
           </div>
         </div>
 
