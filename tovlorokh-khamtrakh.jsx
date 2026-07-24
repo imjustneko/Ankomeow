@@ -3,7 +3,7 @@ import { ChevronLeft, Check, Trash2, Pause, Upload, RotateCcw, X, MapPin, Pencil
 import GIF from "gif.js";
 import gifWorkerUrl from "gif.js/dist/gif.worker.js?url";
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, addDoc, doc, setDoc, onSnapshot, query, orderBy, limit, serverTimestamp } from "firebase/firestore";
+import { getFirestore, collection, addDoc, doc, setDoc, updateDoc, onSnapshot, query, orderBy, limit, serverTimestamp } from "firebase/firestore";
 
 /* ── Firebase (хос chat) ── */
 const firebaseConfig = {
@@ -651,11 +651,13 @@ function GifScreen({ frames, setFrames, onBack }) {
 
 /* ── Чат ── */
 const REACTIONS = [
-  { key: "poke", label: "Тэмтэрлээ", q: "poke cute anime" },
-  { key: "kiss", label: "Үнслээ", q: "kiss cute couple anime" },
-  { key: "punch", label: "Цохилоо", q: "punch funny anime" },
+  { key: "poke", label: "Тэмтэрлээ", q: "anime chibi poke" },
+  { key: "kiss", label: "Үнслээ", q: "anime kiss couple chibi" },
+  { key: "punch", label: "Цохилоо", q: "anime chibi punch" },
 ];
+const ANIME_HINTS = ["anime", "chibi", "manga", "kawaii", "waifu", "senpai", "otaku", "crunchyroll", "funimation", "iqiyi", "webtoon"];
 const GIPHY_KEY = "uAAteEbDyzEiWuUojG6YfynP6q3Od7Wa";
+const QUICK_REACTIONS = ["❤️", "😂", "👍", "😮", "😢"];
 
 const chatTime = (ts) => {
   if (!ts?.toDate) return "";
@@ -689,6 +691,7 @@ function ChatScreen({ onBack, profileName }) {
   const [showReact, setShowReact] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [partnerSeenAt, setPartnerSeenAt] = useState(null);
+  const [reactingTo, setReactingTo] = useState(null);
   const deviceId = useMemo(getDeviceId, []);
   const listRef = useRef(null);
   const imgFileRef = useRef(null);
@@ -735,13 +738,25 @@ function ChatScreen({ onBack, profileName }) {
     setText("");
   };
 
+  const react = (m, emoji) => {
+    const next = { ...(m.reactions || {}) };
+    if (next[deviceId] === emoji) delete next[deviceId]; else next[deviceId] = emoji;
+    updateDoc(doc(db, "rooms", CHAT_ROOM, "messages", m.id), { reactions: next }).catch(() => {});
+    setReactingTo(null);
+  };
+
   const sendReaction = async (r) => {
     setShowReact(false);
     try {
-      const res = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(r.q)}&limit=20&rating=g`);
+      const res = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(r.q)}&limit=25&rating=g`);
       const data = await res.json();
       const pool = (data?.data ?? []).filter((g) => g?.images?.fixed_height?.url);
-      const pick = pool[Math.floor(Math.random() * pool.length)];
+      const isAnime = (g) => {
+        const hay = `${g.title || ""} ${g.slug || ""} ${g.username || ""}`.toLowerCase();
+        return ANIME_HINTS.some((h) => hay.includes(h));
+      };
+      const animePool = pool.filter(isAnime);
+      const pick = animePool.length ? animePool[Math.floor(Math.random() * animePool.length)] : null;
       send({ type: "reaction", key: r.key, label: r.label, gifUrl: pick?.images?.fixed_height?.url ?? null });
     } catch {
       send({ type: "reaction", key: r.key, label: r.label });
@@ -778,7 +793,7 @@ function ChatScreen({ onBack, profileName }) {
     <div className="flex-1 flex flex-col min-h-0">
       <Header title="Чат" sub="Хайртай хүнтэйгээ шууд бичих" onBack={onBack} />
 
-      <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto space-y-2 mb-3">
+      <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-2 mb-3">
         {messages.length === 0 ? (
           <p className="text-[12px] py-8 text-center font-medium" style={{ color: C.inkSoft }}>
             Одоогоор мессеж алга. Эхний мессежээ бичээрэй.
@@ -788,12 +803,15 @@ function ChatScreen({ onBack, profileName }) {
             const mine = m.sender === deviceId;
             const media = m.type === "image" || (m.type === "reaction" && m.gifUrl);
             const seen = mine && m.createdAt && partnerSeenAt && m.createdAt.toMillis() <= partnerSeenAt.toMillis();
+            const myReaction = m.reactions?.[deviceId];
+            const reactionList = Object.values(m.reactions || {});
             return (
               <div key={m.id} className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
                 {!mine && m.senderName && (
                   <div className="text-[9.5px] font-bold mb-1 px-1" style={{ color: C.inkSoft }}>{m.senderName}</div>
                 )}
-                <div className={`max-w-[75%] rounded-[18px] text-[13px] font-semibold ${media ? "p-1.5" : "px-3.5 py-2.5"}`}
+                <div onClick={() => setReactingTo((id) => (id === m.id ? null : m.id))}
+                  className={`max-w-[75%] rounded-[18px] text-[13px] font-semibold cursor-pointer ${media ? "p-1.5" : "px-3.5 py-2.5"}`}
                   style={{
                     background: mine ? C.lilacDeep : C.card, color: mine ? "#fff" : C.ink,
                     border: mine ? "none" : `1.5px solid ${C.line}`,
@@ -813,6 +831,25 @@ function ChatScreen({ onBack, profileName }) {
                     </span>
                   )}
                 </div>
+
+                {reactingTo === m.id && (
+                  <div className="flex gap-1 mt-1 px-1.5 py-1 rounded-full" style={{ background: C.card, border: `1.5px solid ${C.line}` }}>
+                    {QUICK_REACTIONS.map((e) => (
+                      <button key={e} onClick={() => react(m, e)}
+                        className="w-7 h-7 rounded-full flex items-center justify-center text-[15px] active:scale-90"
+                        style={{ background: myReaction === e ? C.cardIn : "transparent", transition: "transform 120ms ease" }}>
+                        {e}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {reactionList.length > 0 && (
+                  <div className="flex gap-0.5 mt-1 px-1" style={{ fontSize: 13 }}>
+                    {reactionList.map((e, i) => <span key={i}>{e}</span>)}
+                  </div>
+                )}
+
                 <div className="flex items-center gap-1 mt-1 px-1" style={{ color: C.inkSoft }}>
                   <span className="text-[9.5px] font-semibold">{chatTime(m.createdAt)}</span>
                   {m.id === lastMineId && (
@@ -1020,9 +1057,19 @@ function ProfileScreen({ ml, goal, items, gifCount, avatar, setAvatar, profileNa
   const [picking, setPicking] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(profileName);
+  const [taken, setTaken] = useState(false);
+  const [partnerNames, setPartnerNames] = useState([]);
   const fileRef = useRef(null);
+  const deviceId = useMemo(getDeviceId, []);
   const done = items.filter((i) => i.done).length;
   const stTotal = APPS.reduce((s, a) => s + a.min, 0);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "rooms", CHAT_ROOM, "profiles"), (snap) => {
+      setPartnerNames(snap.docs.filter((d) => d.id !== deviceId).map((d) => (d.data().name || "").trim().toLowerCase()));
+    }, () => {});
+    return unsub;
+  }, [deviceId]);
 
   const onUpload = (e) => {
     const file = e.target.files?.[0];
@@ -1034,7 +1081,11 @@ function ProfileScreen({ ml, goal, items, gifCount, avatar, setAvatar, profileNa
 
   const saveName = () => {
     const n = nameDraft.trim();
-    if (n) setProfileName(n);
+    if (!n) return;
+    if (partnerNames.includes(n.toLowerCase())) { setTaken(true); return; }
+    setTaken(false);
+    setProfileName(n);
+    setDoc(doc(db, "rooms", CHAT_ROOM, "profiles", deviceId), { name: n }).catch(() => {});
     setEditingName(false);
   };
 
@@ -1054,15 +1105,22 @@ function ProfileScreen({ ml, goal, items, gifCount, avatar, setAvatar, profileNa
         </button>
         <div className="text-center">
           {editingName ? (
-            <div className="flex items-center gap-1.5">
-              <input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && saveName()} autoFocus
-                className="text-[14px] font-extrabold text-center rounded-full px-3 py-1 outline-none"
-                style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink, width: 140 }} />
-              <button onClick={saveName} className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
-                style={{ background: C.lilacDeep, color: "#fff" }} aria-label="Хадгалах">
-                <Check size={13} strokeWidth={2.6} />
-              </button>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <input value={nameDraft} onChange={(e) => { setNameDraft(e.target.value); setTaken(false); }}
+                  onKeyDown={(e) => e.key === "Enter" && saveName()} autoFocus
+                  className="text-[14px] font-extrabold text-center rounded-full px-3 py-1 outline-none"
+                  style={{ background: C.card, border: `1.8px solid ${taken ? C.peachDeep : C.line2}`, color: C.ink, width: 140 }} />
+                <button onClick={saveName} className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+                  style={{ background: C.lilacDeep, color: "#fff" }} aria-label="Хадгалах">
+                  <Check size={13} strokeWidth={2.6} />
+                </button>
+              </div>
+              {taken && (
+                <p className="text-[10px] font-bold mt-1" style={{ color: C.peachDeep }}>
+                  Энэ нэрийг хамтрагч чинь ашиглаж байна
+                </p>
+              )}
             </div>
           ) : (
             <button onClick={() => { setNameDraft(profileName); setEditingName(true); }}
@@ -1128,7 +1186,17 @@ function ProfileScreen({ ml, goal, items, gifCount, avatar, setAvatar, profileNa
 function WhoAreYou({ onDone }) {
   const [name, setName] = useState("");
   const [avatar, setAvatarSel] = useState(AVATARS[0]);
+  const [taken, setTaken] = useState(false);
+  const [partnerNames, setPartnerNames] = useState([]);
   const fileRef = useRef(null);
+  const deviceId = useMemo(getDeviceId, []);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "rooms", CHAT_ROOM, "profiles"), (snap) => {
+      setPartnerNames(snap.docs.filter((d) => d.id !== deviceId).map((d) => (d.data().name || "").trim().toLowerCase()));
+    }, () => {});
+    return unsub;
+  }, [deviceId]);
 
   const onUpload = (e) => {
     const file = e.target.files?.[0];
@@ -1141,6 +1209,8 @@ function WhoAreYou({ onDone }) {
   const submit = () => {
     const n = name.trim();
     if (!n) return;
+    if (partnerNames.includes(n.toLowerCase())) { setTaken(true); return; }
+    setDoc(doc(db, "rooms", CHAT_ROOM, "profiles", deviceId), { name: n }).catch(() => {});
     onDone(n, avatar);
   };
 
@@ -1154,10 +1224,13 @@ function WhoAreYou({ onDone }) {
       <img src={avatar} alt="" className="w-[76px] h-[76px] rounded-[24px] object-cover mb-3"
         style={{ border: `2px solid ${C.line2}` }} />
 
-      <input value={name} onChange={(e) => setName(e.target.value)}
+      <input value={name} onChange={(e) => { setName(e.target.value); setTaken(false); }}
         onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Нэрээ бичих..."
-        className="w-full max-w-[240px] rounded-full px-4 py-2.5 text-[13.5px] font-medium text-center outline-none mb-4"
-        style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
+        className="w-full max-w-[240px] rounded-full px-4 py-2.5 text-[13.5px] font-medium text-center outline-none mb-1"
+        style={{ background: C.card, border: `1.8px solid ${taken ? C.peachDeep : C.line2}`, color: C.ink }} />
+      <p className="text-[10.5px] font-bold mb-3" style={{ color: taken ? C.peachDeep : "transparent", minHeight: 14 }}>
+        Энэ нэрийг хамтрагч чинь аль хэдийн ашиглаж байна
+      </p>
 
       <div className="grid grid-cols-4 gap-2 mb-3" style={{ maxWidth: 260 }}>
         {AVATARS.map((src, i) => (
@@ -1195,28 +1268,21 @@ function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar, p
 
   return (
     <div>
-      <div className="sticky top-0 z-10 -mx-5 -mt-7 px-5 pt-4 pb-1 flex flex-col gap-2.5"
+      <div className="sticky top-0 z-10 -mx-5 -mt-7 px-5 pt-7 pb-1 flex items-center gap-3"
         style={{ background: "rgba(253,248,239,.55)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)" }}>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#FF5F57" }} />
-          <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#FEBC2E" }} />
-          <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#28C840" }} />
+        <img src={LOGO} alt="Төвлөрөх Хамтрах" className="w-[52px] h-[52px] rounded-[18px] object-cover shrink-0"
+          style={{ border: `1.5px solid ${C.line2}` }} />
+        <div className="flex-1">
+          <p className="text-[11px] font-bold tracking-wide" style={{ color: C.inkSoft, letterSpacing: ".06em" }}>
+            {now.getMonth() + 1}-Р САРЫН {now.getDate()} · {DAYS[now.getDay()].toUpperCase()}
+          </p>
+          <h1 className="text-[24px] font-extrabold leading-tight" style={{ color: C.ink }}>{greet}</h1>
         </div>
-        <div className="flex items-center gap-3">
-          <img src={LOGO} alt="Төвлөрөх Хамтрах" className="w-[52px] h-[52px] rounded-[18px] object-cover shrink-0"
+        <button onClick={() => go("profile")} className="shrink-0 active:scale-95" aria-label="Профайл"
+          style={{ transition: "transform 150ms ease" }}>
+          <img src={avatar} alt="" className="w-9 h-9 rounded-2xl object-cover"
             style={{ border: `1.5px solid ${C.line2}` }} />
-          <div className="flex-1">
-            <p className="text-[11px] font-bold tracking-wide" style={{ color: C.inkSoft, letterSpacing: ".06em" }}>
-              {now.getMonth() + 1}-Р САРЫН {now.getDate()} · {DAYS[now.getDay()].toUpperCase()}
-            </p>
-            <h1 className="text-[24px] font-extrabold leading-tight" style={{ color: C.ink }}>{greet}</h1>
-          </div>
-          <button onClick={() => go("profile")} className="shrink-0 active:scale-95" aria-label="Профайл"
-            style={{ transition: "transform 150ms ease" }}>
-            <img src={avatar} alt="" className="w-9 h-9 rounded-2xl object-cover"
-              style={{ border: `1.5px solid ${C.line2}` }} />
-          </button>
-        </div>
+        </button>
       </div>
 
       <img src={WELCOME_HERO} alt="Тавтай морил" className="w-full rounded-[22px] mb-4 object-cover"
@@ -1325,6 +1391,12 @@ export default function App() {
     localStorage.setItem(STORE_KEY, JSON.stringify({ ml, log, weight, items, day, avatar, profileName }));
   }, [ml, log, weight, items, day, avatar, profileName]);
 
+  /* нэрээ Firestore-той синк хийж, хамтрагчийн профайл жагсаалтад мэдэгдэнэ */
+  useEffect(() => {
+    if (!profileName) return;
+    setDoc(doc(db, "rooms", CHAT_ROOM, "profiles", getDeviceId()), { name: profileName }).catch(() => {});
+  }, [profileName]);
+
   /* УБ цагаар 00:00 болоход өдрийн бүртгэл тэглэгдэнэ */
   useEffect(() => {
     const id = setInterval(() => {
@@ -1396,6 +1468,13 @@ export default function App() {
           border: `2.5px solid ${C.line2}`, boxShadow: "0 24px 54px rgba(92,74,58,.16)", minHeight: "760px",
         }}>
 
+        {/* macOS traffic light — бүх дэлгэц дээр байнга зүүн дээд буланд */}
+        <div className="absolute top-4 left-5 z-30 flex items-center gap-1.5 pointer-events-none">
+          <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#FF5F57" }} />
+          <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#FEBC2E" }} />
+          <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#28C840" }} />
+        </div>
+
         {/* Splash */}
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 overflow-hidden"
           style={{
@@ -1413,7 +1492,7 @@ export default function App() {
           </div>
         ) : (
           <>
-            <div className={`flex-1 px-5 pt-7 min-h-0 flex flex-col ${tab === "chat" ? "pb-3" : "pb-4 overflow-y-auto"}`}
+            <div className={`flex-1 px-5 pt-7 min-h-0 flex flex-col ${tab === "chat" ? "pb-3" : "pb-4 overflow-y-auto overscroll-contain"}`}
               style={tab === "chat" ? undefined : { maxHeight: "672px" }}>
               <div key={tab} className={`scr ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
                 {tab === "home" && <HomeScreen go={setTab} {...{ ml, goal, items, clock, justReset, avatar, profileName }} gifCount={frames.length} />}
