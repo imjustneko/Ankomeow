@@ -778,10 +778,7 @@ export default function App() {
   return (
     <div className="w-full min-h-screen flex items-start justify-center py-6 px-4"
       style={{
-        backgroundImage: `linear-gradient(180deg, rgba(244,234,218,.55) 0%, rgba(244,234,218,.7) 100%), url(${BG_MAIN})`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        backgroundAttachment: "fixed",
+        background: `linear-gradient(160deg, ${C.paper2} 0%, #ECE0CC 100%)`,
         fontFamily: "'Manrope','Inter',system-ui,-apple-system,sans-serif",
       }}>
       <style>{`
@@ -812,15 +809,17 @@ export default function App() {
         input[type=range]{height:6px;border-radius:99px;background:${C.cardIn};-webkit-appearance:none;outline:none}
         input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:${C.waterDeep};border:3px solid #fff;box-shadow:0 1px 4px rgba(92,74,58,.25);cursor:pointer}
         ::-webkit-scrollbar{height:5px;width:5px} ::-webkit-scrollbar-thumb{background:${C.line2};border-radius:99px}
-        .hcarousel{scrollbar-width:none}
+        .hcarousel{scrollbar-width:none;scroll-behavior:smooth}
         .hcarousel::-webkit-scrollbar{display:none}
       `}</style>
 
       <div className="w-full max-w-[400px] rounded-[38px] overflow-hidden flex flex-col relative"
         style={{
-          background: `linear-gradient(180deg, ${C.paper} 0%, ${C.paper2} 100%)`,
-          backgroundImage: `${GRAIN}, linear-gradient(180deg, ${C.paper} 0%, ${C.paper2} 100%)`,
-          backgroundBlendMode: "multiply, normal",
+          backgroundImage: `${GRAIN}, linear-gradient(180deg, rgba(253,248,239,.82) 0%, rgba(244,234,218,.88) 100%), url(${BG_MAIN})`,
+          backgroundBlendMode: "multiply, normal, normal",
+          backgroundSize: "auto, auto, cover",
+          backgroundPosition: "0 0, 0 0, center",
+          backgroundRepeat: "repeat, no-repeat, no-repeat",
           border: `2.5px solid ${C.line2}`, boxShadow: "0 24px 54px rgba(92,74,58,.16)", minHeight: "760px",
         }}>
 
@@ -850,23 +849,22 @@ export default function App() {
           </div>
         </div>
 
-        <nav className="flex justify-around items-center py-2.5 px-2 shrink-0"
-          style={{ borderTop: `1.5px solid ${C.line}`, background: C.card }}>
+        <nav className="flex justify-around items-center gap-1 py-2.5 px-3 mx-4 mb-4 rounded-full shrink-0"
+          style={{ background: C.card, border: `1.5px solid ${C.line}`, boxShadow: "0 10px 24px rgba(92,74,58,.14)" }}>
           {nav.map(({ id, icon, label, c, c2 }) => {
             const on = tab === id;
             return (
               <button key={id} onClick={() => setTab(id)}
-                className="flex flex-col items-center gap-1 px-3 py-1.5 rounded-2xl"
-                style={{
-                  background: on ? `linear-gradient(155deg, ${c2 || c} 0%, ${c} 100%)` : "transparent",
-                  boxShadow: on ? "0 3px 8px rgba(92,74,58,.22)" : "none",
-                  transition: "background 220ms ease, box-shadow 220ms ease",
-                }}>
-                <span className="w-6 h-6 rounded-xl flex items-center justify-center overflow-hidden"
-                  style={{ background: C.card, opacity: on ? 1 : 0.75 }}>
+                className="flex flex-col items-center gap-1 px-1.5 py-1 rounded-2xl">
+                <span className="w-9 h-9 rounded-2xl flex items-center justify-center overflow-hidden"
+                  style={{
+                    background: on ? `linear-gradient(155deg, ${c2 || c} 0%, ${c} 100%)` : C.cardIn,
+                    boxShadow: on ? "0 3px 8px rgba(92,74,58,.22)" : "none",
+                    transition: "background 220ms ease, box-shadow 220ms ease",
+                  }}>
                   <img src={icon} alt="" className="w-full h-full object-cover" />
                 </span>
-                <span className="text-[9px] font-extrabold" style={{ color: on ? "#fff" : C.inkSoft }}>{label}</span>
+                <span className="text-[9px] font-extrabold" style={{ color: on ? C.ink : C.inkSoft }}>{label}</span>
               </button>
             );
           })}
