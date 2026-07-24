@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { ChevronLeft, Check, Trash2, Pause, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle } from "lucide-react";
+import { ChevronLeft, Check, Trash2, Pause, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck } from "lucide-react";
 import GIF from "gif.js";
 import gifWorkerUrl from "gif.js/dist/gif.worker.js?url";
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit, serverTimestamp } from "firebase/firestore";
+import { getFirestore, collection, addDoc, doc, setDoc, onSnapshot, query, orderBy, limit, serverTimestamp } from "firebase/firestore";
 
 /* ── Firebase (хос chat) ── */
 const firebaseConfig = {
@@ -651,17 +651,47 @@ function GifScreen({ frames, setFrames, onBack }) {
 
 /* ── Чат ── */
 const REACTIONS = [
-  { key: "poke", label: "Тэмтэрлээ" },
-  { key: "kiss", label: "Үнслээ" },
-  { key: "punch", label: "Цохилоо" },
+  { key: "poke", label: "Тэмтэрлээ", q: "poke cute anime" },
+  { key: "kiss", label: "Үнслээ", q: "kiss cute couple anime" },
+  { key: "punch", label: "Цохилоо", q: "punch funny anime" },
 ];
+const GIPHY_KEY = "dc6zaTOxFJmzC";
+
+const chatTime = (ts) => {
+  if (!ts?.toDate) return "";
+  const p = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(ts.toDate());
+  const g = (t) => p.find((x) => x.type === t)?.value ?? "00";
+  return `${g("hour")}:${g("minute")}`;
+};
+
+const compressImage = (file, maxDim, quality) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onerror = reject;
+  reader.onload = () => {
+    const img = new Image();
+    img.onerror = reject;
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+});
 
 function ChatScreen({ onBack }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [showReact, setShowReact] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [partnerSeenAt, setPartnerSeenAt] = useState(null);
   const deviceId = useMemo(getDeviceId, []);
   const listRef = useRef(null);
+  const imgFileRef = useRef(null);
 
   useEffect(() => {
     const q = query(collection(db, "rooms", CHAT_ROOM, "messages"), orderBy("createdAt", "desc"), limit(100));
@@ -670,6 +700,23 @@ function ChatScreen({ onBack }) {
     }, () => {});
     return unsub;
   }, []);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "rooms", CHAT_ROOM, "reads"), (snap) => {
+      let latest = null;
+      snap.docs.forEach((d) => {
+        if (d.id === deviceId) return;
+        const at = d.data().at;
+        if (at && (!latest || at.toMillis() > latest.toMillis())) latest = at;
+      });
+      setPartnerSeenAt(latest);
+    }, () => {});
+    return unsub;
+  }, [deviceId]);
+
+  useEffect(() => {
+    setDoc(doc(db, "rooms", CHAT_ROOM, "reads", deviceId), { at: serverTimestamp() }).catch(() => {});
+  }, [messages.length, deviceId]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
@@ -688,9 +735,17 @@ function ChatScreen({ onBack }) {
     setText("");
   };
 
-  const sendReaction = (r) => {
-    send({ type: "reaction", key: r.key, label: r.label });
+  const sendReaction = async (r) => {
     setShowReact(false);
+    try {
+      const res = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(r.q)}&limit=20&rating=g`);
+      const data = await res.json();
+      const pool = (data?.data ?? []).filter((g) => g?.images?.fixed_height?.url);
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      send({ type: "reaction", key: r.key, label: r.label, gifUrl: pick?.images?.fixed_height?.url ?? null });
+    } catch {
+      send({ type: "reaction", key: r.key, label: r.label });
+    }
   };
 
   const sendLocation = () => {
@@ -700,11 +755,30 @@ function ChatScreen({ onBack }) {
     });
   };
 
+  const onImageChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    try {
+      let quality = 0.6;
+      let dataUrl = await compressImage(file, 900, quality);
+      while (dataUrl.length > 700000 && quality > 0.25) {
+        quality -= 0.15;
+        dataUrl = await compressImage(file, 900, quality);
+      }
+      if (dataUrl.length <= 900000) send({ type: "image", image: dataUrl });
+    } catch {}
+    setUploading(false);
+  };
+
+  const lastMineId = [...messages].reverse().find((m) => m.sender === deviceId)?.id;
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex-1 flex flex-col min-h-0">
       <Header title="Чат" sub="Хайртай хүнтэйгээ шууд бичих" onBack={onBack} />
 
-      <div ref={listRef} className="flex-1 overflow-y-auto space-y-2 mb-3" style={{ minHeight: 320, maxHeight: 420 }}>
+      <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto space-y-2 mb-3">
         {messages.length === 0 ? (
           <p className="text-[12px] py-8 text-center font-medium" style={{ color: C.inkSoft }}>
             Одоогоор мессеж алга. Эхний мессежээ бичээрэй.
@@ -712,19 +786,36 @@ function ChatScreen({ onBack }) {
         ) : (
           messages.map((m) => {
             const mine = m.sender === deviceId;
+            const media = m.type === "image" || (m.type === "reaction" && m.gifUrl);
+            const seen = mine && m.createdAt && partnerSeenAt && m.createdAt.toMillis() <= partnerSeenAt.toMillis();
             return (
-              <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-                <div className="max-w-[75%] rounded-[18px] px-3.5 py-2.5 text-[13px] font-semibold"
+              <div key={m.id} className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
+                <div className={`max-w-[75%] rounded-[18px] text-[13px] font-semibold ${media ? "p-1.5" : "px-3.5 py-2.5"}`}
                   style={{
                     background: mine ? C.lilacDeep : C.card, color: mine ? "#fff" : C.ink,
                     border: mine ? "none" : `1.5px solid ${C.line}`,
                   }}>
                   {m.type === "text" && m.text}
-                  {m.type === "reaction" && <span className="italic">*{m.label}*</span>}
+                  {m.type === "image" && <img src={m.image} alt="" className="rounded-[14px] max-w-full block" style={{ maxHeight: 220 }} />}
+                  {m.type === "reaction" && m.gifUrl && (
+                    <div>
+                      <img src={m.gifUrl} alt={m.label} className="rounded-[14px] max-w-full block" style={{ maxHeight: 180 }} />
+                      <div className="italic text-[11px] px-1 pt-1">{m.label}</div>
+                    </div>
+                  )}
+                  {m.type === "reaction" && !m.gifUrl && <span className="italic">*{m.label}*</span>}
                   {m.type === "location" && (
                     <span className="flex items-center gap-1.5">
                       <MapPin size={13} strokeWidth={2.4} /> {m.lat?.toFixed(4)}, {m.lng?.toFixed(4)}
                     </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 mt-1 px-1" style={{ color: C.inkSoft }}>
+                  <span className="text-[9.5px] font-semibold">{chatTime(m.createdAt)}</span>
+                  {m.id === lastMineId && (
+                    seen
+                      ? <CheckCheck size={11} strokeWidth={2.4} color={C.waterDeep} />
+                      : <Check size={11} strokeWidth={2.4} />
                   )}
                 </div>
               </div>
@@ -741,7 +832,7 @@ function ChatScreen({ onBack }) {
         </div>
       )}
 
-      <div className="flex gap-2 items-center">
+      <div className="flex gap-2 items-center pb-1">
         <button onClick={() => setShowReact((s) => !s)}
           className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center active:scale-95"
           style={{
@@ -750,6 +841,13 @@ function ChatScreen({ onBack }) {
           }} aria-label="Реакц">
           <Heart size={17} strokeWidth={2.2} />
         </button>
+        <button onClick={() => imgFileRef.current?.click()} disabled={uploading}
+          className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center active:scale-95 disabled:opacity-40"
+          style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink, transition: "transform 150ms ease" }}
+          aria-label="Зураг илгээх">
+          <ImageIcon size={17} strokeWidth={2.2} />
+        </button>
+        <input ref={imgFileRef} type="file" accept="image/*" onChange={onImageChange} className="hidden" />
         <button onClick={sendLocation}
           className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center active:scale-95"
           style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink, transition: "transform 150ms ease" }}
@@ -758,7 +856,7 @@ function ChatScreen({ onBack }) {
         </button>
         <input value={text} onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && onSend()} placeholder="Мессеж бичих..."
-          className="flex-1 rounded-full px-4 py-2.5 text-[13.5px] font-medium outline-none"
+          className="flex-1 min-w-0 rounded-full px-4 py-2.5 text-[13.5px] font-medium outline-none"
           style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
         <button onClick={onSend}
           className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center active:scale-95"
@@ -1212,8 +1310,9 @@ export default function App() {
           <LoadingSequence />
         </div>
 
-        <div className="flex-1 px-5 pt-7 pb-4 overflow-y-auto" style={{ maxHeight: "672px" }}>
-          <div key={tab} className="scr">
+        <div className={`flex-1 px-5 pt-7 min-h-0 flex flex-col ${tab === "chat" ? "pb-3" : "pb-4 overflow-y-auto"}`}
+          style={tab === "chat" ? undefined : { maxHeight: "672px" }}>
+          <div key={tab} className={`scr ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
             {tab === "home" && <HomeScreen go={setTab} {...{ ml, goal, items, clock, justReset, avatar }} gifCount={frames.length} />}
             {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} onBack={() => setTab("home")} />}
             {tab === "list" && <ListScreen items={items} setItems={setItems} onBack={() => setTab("home")} />}
@@ -1224,26 +1323,28 @@ export default function App() {
           </div>
         </div>
 
-        <nav className="flex justify-around items-center gap-1 py-2.5 px-3 mx-4 mb-4 rounded-full shrink-0"
-          style={{ background: C.card, border: `1.5px solid ${C.line}`, boxShadow: "0 10px 24px rgba(92,74,58,.14)" }}>
-          {nav.map(({ id, icon, label, c, c2 }) => {
-            const on = tab === id;
-            return (
-              <button key={id} onClick={() => setTab(id)}
-                className="flex flex-col items-center gap-1 px-1.5 py-1 rounded-2xl">
-                <span className="w-9 h-9 rounded-2xl flex items-center justify-center overflow-hidden"
-                  style={{
-                    background: on ? `linear-gradient(155deg, ${c2 || c} 0%, ${c} 100%)` : C.cardIn,
-                    boxShadow: on ? "0 3px 8px rgba(92,74,58,.22)" : "none",
-                    transition: "background 220ms ease, box-shadow 220ms ease",
-                  }}>
-                  <img src={icon} alt="" className="w-full h-full object-cover" />
-                </span>
-                <span className="text-[9px] font-extrabold" style={{ color: on ? C.ink : C.inkSoft }}>{label}</span>
-              </button>
-            );
-          })}
-        </nav>
+        {tab !== "chat" && (
+          <nav className="flex justify-around items-center gap-1 py-2.5 px-3 mx-4 mb-4 rounded-full shrink-0"
+            style={{ background: C.card, border: `1.5px solid ${C.line}`, boxShadow: "0 10px 24px rgba(92,74,58,.14)" }}>
+            {nav.map(({ id, icon, label, c, c2 }) => {
+              const on = tab === id;
+              return (
+                <button key={id} onClick={() => setTab(id)}
+                  className="flex flex-col items-center gap-1 px-1.5 py-1 rounded-2xl">
+                  <span className="w-9 h-9 rounded-2xl flex items-center justify-center overflow-hidden"
+                    style={{
+                      background: on ? `linear-gradient(155deg, ${c2 || c} 0%, ${c} 100%)` : C.cardIn,
+                      boxShadow: on ? "0 3px 8px rgba(92,74,58,.22)" : "none",
+                      transition: "background 220ms ease, box-shadow 220ms ease",
+                    }}>
+                    <img src={icon} alt="" className="w-full h-full object-cover" />
+                  </span>
+                  <span className="text-[9px] font-extrabold" style={{ color: on ? C.ink : C.inkSoft }}>{label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        )}
       </div>
     </div>
   );
