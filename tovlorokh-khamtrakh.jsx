@@ -562,46 +562,63 @@ function LocationCard() {
 }
 
 /* ── Нүүрний carousel ── */
+function carouselNearestIndex(root, refs) {
+  const rootRect = root.getBoundingClientRect();
+  const rootCenter = rootRect.left + rootRect.width / 2;
+  let best = 0, bestDist = Infinity;
+  refs.forEach((el, i) => {
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const c = r.left + r.width / 2;
+    const d = Math.abs(c - rootCenter);
+    if (d < bestDist) { bestDist = d; best = i; }
+  });
+  return best;
+}
+
 function HomeCarousel() {
-  const slides = [CAR_LIST, CAR_WATER, CAR_SCREEN, CAR_GIF];
+  const base = [CAR_LIST, CAR_WATER, CAR_SCREEN, CAR_GIF];
+  const REPS = 3;
+  const slides = Array.from({ length: base.length * REPS }, (_, i) => base[i % base.length]);
+  const n = base.length;
   const trackRef = useRef(null);
   const slideRefs = useRef([]);
   const pausedUntil = useRef(0);
-  const [index, setIndex] = useState(0);
+  const settleTimer = useRef(null);
+
+  const goTo = (i, smooth) => {
+    slideRefs.current[i]?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", inline: "center", block: "nearest" });
+  };
+
+  useEffect(() => { goTo(n, false); }, []);
 
   useEffect(() => {
     const id = setInterval(() => {
       if (Date.now() < pausedUntil.current) return;
-      const next = (index + 1) % slides.length;
-      slideRefs.current[next]?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      const root = trackRef.current;
+      if (!root) return;
+      goTo(carouselNearestIndex(root, slideRefs.current) + 1, true);
     }, 1000);
     return () => clearInterval(id);
-  }, [index, slides.length]);
-
-  useEffect(() => {
-    const root = trackRef.current;
-    if (!root) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((e) => {
-          if (e.isIntersecting && e.intersectionRatio > 0.6) {
-            const i = slideRefs.current.indexOf(e.target);
-            if (i !== -1) setIndex(i);
-          }
-        });
-      },
-      { root, threshold: [0.6] }
-    );
-    slideRefs.current.forEach((el) => el && obs.observe(el));
-    return () => obs.disconnect();
   }, []);
 
-  const pause = () => { pausedUntil.current = Date.now() + 6000; };
+  const onScroll = () => {
+    clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(() => {
+      const root = trackRef.current;
+      if (!root) return;
+      const cur = carouselNearestIndex(root, slideRefs.current);
+      if (cur >= n * (REPS - 1)) goTo(cur - n, false);
+      else if (cur < n) goTo(cur + n, false);
+    }, 120);
+  };
+
+  const pause = () => { pausedUntil.current = Date.now() + 4000; };
 
   return (
-    <div ref={trackRef} onTouchStart={pause} onPointerDown={pause} onWheel={pause}
+    <div ref={trackRef} onScroll={onScroll} onTouchStart={pause} onPointerDown={pause} onWheel={pause}
       className="hcarousel flex gap-3 overflow-x-auto mb-4"
-      style={{ scrollSnapType: "x mandatory", scrollPadding: "0 14%" }}>
+      style={{ scrollSnapType: "x mandatory", scrollPadding: "0 31%" }}>
       {slides.map((src, i) => (
         <img key={i} ref={(el) => (slideRefs.current[i] = el)} src={src} alt=""
           className="shrink-0 rounded-[22px] object-cover"
