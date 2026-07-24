@@ -573,7 +573,7 @@ function HomeCarousel() {
       if (Date.now() < pausedUntil.current) return;
       const next = (index + 1) % slides.length;
       slideRefs.current[next]?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
-    }, 3500);
+    }, 1000);
     return () => clearInterval(id);
   }, [index, slides.length]);
 
