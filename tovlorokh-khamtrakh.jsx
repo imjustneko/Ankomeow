@@ -3,7 +3,7 @@ import { ChevronLeft, Check, Trash2, Pause, Upload, RotateCcw, X, MapPin, Pencil
 import GIF from "gif.js";
 import gifWorkerUrl from "gif.js/dist/gif.worker.js?url";
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, addDoc, doc, setDoc, updateDoc, onSnapshot, query, orderBy, limit, serverTimestamp } from "firebase/firestore";
+import { getFirestore, collection, addDoc, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp } from "firebase/firestore";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
 /* ── Firebase (хос chat) ── */
@@ -571,11 +571,8 @@ function ListScreen({ items, setItems, partner, onBack }) {
 
 /* ── Дэлгэцийн цаг ── */
 const APP_COLORS = [C.peachDeep, "#E08A8A", C.waterDeep, C.sageDeep, C.gold, C.lilacDeep];
-const APP_PRESETS = ["Instagram", "YouTube", "Messenger", "Chrome", "TikTok"];
 
-function ScreenTimeScreen({ screenApps, setScreenApps, screenHistory, appMin, partner, onBack }) {
-  const [name, setName] = useState("");
-  const [min, setMin] = useState("");
+function ScreenTimeScreen({ screenApps, screenHistory, appMin, partner, onBack }) {
   const [mine, setMine] = useState(true);
 
   const activeApps = mine ? screenApps : (partner?.screenApps || []);
@@ -604,15 +601,6 @@ function ScreenTimeScreen({ screenApps, setScreenApps, screenHistory, appMin, pa
   }, [activeHistory, total]);
   const maxW = Math.max(...week.map((w) => w.v), 1);
 
-  const addEntry = () => {
-    const n = name.trim();
-    const m = Math.round(Number(min));
-    if (!n || !m || m <= 0) return;
-    setScreenApps((l) => [...l, { id: Date.now(), name: n, min: m }]);
-    setName("");
-    setMin("");
-  };
-
   return (
     <div>
       <div className="flex items-start justify-between">
@@ -627,7 +615,7 @@ function ScreenTimeScreen({ screenApps, setScreenApps, screenHistory, appMin, pa
           {Math.floor(total / 60)}ц {total % 60}м
         </div>
         <p className="text-[12px] mt-1.5 font-semibold" style={{ color: C.inkSoft }}>
-          Ankomeow доторх цаг автоматаар, бусад апп гараар бүртгэгдэнэ
+          Ankomeow доторх цаг бодитоор, автоматаар бүртгэгдэнэ
         </p>
         <div className="flex items-end gap-2 h-[78px] mt-4">
           {week.map((w, i) => (
@@ -642,41 +630,9 @@ function ScreenTimeScreen({ screenApps, setScreenApps, screenHistory, appMin, pa
         </div>
       </Card>
 
-      {mine && (
-        <Card tint="#F8F4FC" className="mb-4">
-          <div className="text-[12.5px] font-extrabold mb-2.5" style={{ color: C.ink }}>Бусад апп нэмэх (гараар)</div>
-          <div className="flex gap-1.5 mb-2.5 flex-wrap">
-            {APP_PRESETS.map((p) => (
-              <Pill key={p} onClick={() => setName(p)} active={name === p} color={C.peachDeep} className="py-1.5 px-3 text-[11.5px]">
-                {p}
-              </Pill>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Аппын нэр"
-              className="flex-1 min-w-0 rounded-full px-4 py-2.5 text-[13px] font-medium outline-none"
-              style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
-            <input value={min} onChange={(e) => setMin(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addEntry()}
-              type="number" inputMode="numeric" placeholder="мин"
-              className="w-[68px] shrink-0 rounded-full px-3 py-2.5 text-[13px] font-medium outline-none text-center"
-              style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
-            <button onClick={addEntry} className="shrink-0 active:scale-95" style={{ transition: "transform 150ms ease" }} aria-label="Нэмэх">
-              <img src={BTN_ADD} alt="Нэмэх" className="h-[42px] w-auto" />
-            </button>
-          </div>
-        </Card>
-      )}
-
-      <div className="flex items-center justify-between mb-2.5">
-        <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Аппаар</div>
-        {mine && screenApps.length > 0 && (
-          <button onClick={() => setScreenApps([])} className="text-[11px] font-bold flex items-center gap-1" style={{ color: C.inkSoft }}>
-            <RotateCcw size={12} strokeWidth={2.2} /> Тэглэх
-          </button>
-        )}
-      </div>
+      <div className="text-[13px] font-extrabold mb-2.5" style={{ color: C.ink }}>Аппаар</div>
       {byApp.length === 0 ? (
-        <p className="text-[12px] py-3 font-medium" style={{ color: C.inkSoft }}>Хоосон байна. {mine && "Дээрх талбараас нэмнэ үү."}</p>
+        <p className="text-[12px] py-3 font-medium" style={{ color: C.inkSoft }}>Одоогоор дата алга.</p>
       ) : (
         <div className="space-y-2.5">
           {byApp.map((a) => (
@@ -940,6 +896,11 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey }) {
     setReactingTo(null);
   };
 
+  const deleteMessage = (id) => {
+    deleteDoc(doc(db, "rooms", CHAT_ROOM, "messages", id)).catch(() => {});
+    setReactingTo(null);
+  };
+
   const sendReaction = async (r) => {
     setShowReact(false);
     try {
@@ -1028,7 +989,7 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey }) {
                 </div>
 
                 {reactingTo === m.id && (
-                  <div className="flex gap-1 mt-1 px-1.5 py-1 rounded-full" style={{ background: C.card, border: `1.5px solid ${C.line}` }}>
+                  <div className="flex items-center gap-1 mt-1 px-1.5 py-1 rounded-full" style={{ background: C.card, border: `1.5px solid ${C.line}` }}>
                     {QUICK_REACTIONS.map((e) => (
                       <button key={e} onClick={() => react(m, e)}
                         className="w-7 h-7 rounded-full flex items-center justify-center text-[15px] active:scale-90"
@@ -1036,6 +997,16 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey }) {
                         {e}
                       </button>
                     ))}
+                    {mine && (
+                      <>
+                        <div className="w-[1.5px] self-stretch my-0.5" style={{ background: C.line2 }} />
+                        <button onClick={() => deleteMessage(m.id)}
+                          className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90"
+                          style={{ color: C.peachDeep, transition: "transform 120ms ease" }} aria-label="Устгах">
+                          <Trash2 size={14} strokeWidth={2.2} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -1449,12 +1420,18 @@ function LoginScreen() {
 }
 
 /* ── Нүүр ── */
-function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, onInstall, onDismissInstall }) {
+function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar, profileName, screenApps, appMin, partner, canInstall, isIOS, isStandalone, installDismissed, onInstall, onDismissInstall }) {
   const now = new Date();
   const greet = (clock.h < 11 ? "Өглөөний мэнд" : clock.h < 18 ? "Өдрийн мэнд" : "Оройн мэнд") + (profileName ? `, ${profileName}` : "");
   const done = items.filter((i) => i.done).length;
   const stTotal = screenApps.reduce((s, a) => s + a.min, 0) + appMin;
   const left = 86400 - (clock.h * 3600 + clock.m * 60 + clock.s);
+
+  const pItems = partner?.items || [];
+  const pDone = pItems.filter((i) => i.done).length;
+  const pMl = partner?.ml ?? 0;
+  const pGoal = partner?.goal || 1;
+  const pScreenMin = (partner?.screenApps || []).reduce((s, a) => s + a.min, 0) + (partner?.appMin || 0);
 
   return (
     <div>
@@ -1527,6 +1504,31 @@ function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar, p
           </div>
         </Card>
       </div>
+
+      {partner && (
+        <Card tint="#FFFAF0" className="mb-3">
+          <div className="text-[12px] font-extrabold mb-2.5" style={{ color: C.ink }}>{partner.name}-н өнөөдөр</div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <div className="text-[10px] font-bold mb-1" style={{ color: C.waterDeep }}>Ус</div>
+              <div className="text-[12.5px] font-extrabold mb-1.5" style={{ color: C.ink }}>{pMl}мл</div>
+              <Bar value={pMl} max={pGoal} color={C.waterDeep} />
+            </div>
+            <div>
+              <div className="text-[10px] font-bold mb-1" style={{ color: C.sageDeep }}>Жагсаалт</div>
+              <div className="text-[12.5px] font-extrabold mb-1.5" style={{ color: C.ink }}>{pDone}/{pItems.length}</div>
+              <Bar value={pDone} max={Math.max(pItems.length, 1)} color={C.sageDeep} />
+            </div>
+            <div>
+              <div className="text-[10px] font-bold mb-1" style={{ color: C.peachDeep }}>Дэлгэц</div>
+              <div className="text-[12.5px] font-extrabold mb-1.5" style={{ color: C.ink }}>
+                {Math.floor(pScreenMin / 60)}ц{pScreenMin % 60}м
+              </div>
+              <Bar value={pScreenMin} max={240} color={C.peachDeep} />
+            </div>
+          </div>
+        </Card>
+      )}
 
       <HomeCarousel />
 
@@ -1768,10 +1770,10 @@ export default function App() {
           <>
             <div className={`flex-1 px-5 pt-7 min-h-0 flex flex-col ${tab === "chat" ? "pb-3" : "pb-4 overflow-y-auto overscroll-contain"}`}>
               <div key={tab} className={`scr ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
-                {tab === "home" && <HomeScreen go={setTab} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed }} onInstall={installApp} onDismissInstall={dismissInstall} gifCount={frames.length} />}
+                {tab === "home" && <HomeScreen go={setTab} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed }} partner={partnerStats} onInstall={installApp} onDismissInstall={dismissInstall} gifCount={frames.length} />}
                 {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} partner={partnerStats} onBack={() => setTab("home")} />}
                 {tab === "list" && <ListScreen items={items} setItems={setItems} partner={partnerStats} onBack={() => setTab("home")} />}
-                {tab === "screen" && <ScreenTimeScreen {...{ screenApps, setScreenApps, screenHistory, appMin }} partner={partnerStats} onBack={() => setTab("home")} />}
+                {tab === "screen" && <ScreenTimeScreen {...{ screenApps, screenHistory, appMin }} partner={partnerStats} onBack={() => setTab("home")} />}
                 {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} onBack={() => setTab("home")} />}
                 {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, setAvatar, profileName }} gifCount={frames.length} onBack={() => setTab("home")} />}
                 {tab === "chat" && <ChatScreen onBack={() => setTab("home")} profileName={profileName} accountKey={accountKey} partnerKey={partnerKey} />}
