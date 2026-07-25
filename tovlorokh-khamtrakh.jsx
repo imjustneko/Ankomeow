@@ -4,6 +4,7 @@ import GIF from "gif.js";
 import gifWorkerUrl from "gif.js/dist/gif.worker.js?url";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, addDoc, doc, setDoc, updateDoc, onSnapshot, query, orderBy, limit, serverTimestamp } from "firebase/firestore";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
 /* ── Firebase (хос chat) ── */
 const firebaseConfig = {
@@ -17,16 +18,15 @@ const firebaseConfig = {
 };
 const fbApp = initializeApp(firebaseConfig);
 const db = getFirestore(fbApp);
+const auth = getAuth(fbApp);
 const CHAT_ROOM = "ankomeow-couple";
 
-const getDeviceId = () => {
-  let id = localStorage.getItem("ankomeow-device-id");
-  if (!id) {
-    id = "u" + Math.random().toString(36).slice(2) + Date.now().toString(36);
-    localStorage.setItem("ankomeow-device-id", id);
-  }
-  return id;
+/* ── хос бүртгэл (зөвхөн 2 fixed account, бүртгүүлэх боломжгүй) ── */
+const ACCOUNTS = {
+  andela: { email: "andela@ankomeow.app", name: "Andela" },
+  neko: { email: "neko@ankomeow.app", name: "Neko" },
 };
+const accountKeyFromEmail = (email) => (email || "").split("@")[0];
 
 /* ── хэрэглэгчийн зурган эх сурвалж (лого болон section icon-ууд) ── */
 const LOGO = "data:image/webp;base64,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";
@@ -887,14 +887,13 @@ const compressImage = (file, maxDim, quality) => new Promise((resolve, reject) =
   reader.readAsDataURL(file);
 });
 
-function ChatScreen({ onBack, profileName }) {
+function ChatScreen({ onBack, profileName, accountKey, partnerKey }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [showReact, setShowReact] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [partnerSeenAt, setPartnerSeenAt] = useState(null);
   const [reactingTo, setReactingTo] = useState(null);
-  const deviceId = useMemo(getDeviceId, []);
   const listRef = useRef(null);
   const imgFileRef = useRef(null);
 
@@ -907,21 +906,15 @@ function ChatScreen({ onBack, profileName }) {
   }, []);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "rooms", CHAT_ROOM, "reads"), (snap) => {
-      let latest = null;
-      snap.docs.forEach((d) => {
-        if (d.id === deviceId) return;
-        const at = d.data().at;
-        if (at && (!latest || at.toMillis() > latest.toMillis())) latest = at;
-      });
-      setPartnerSeenAt(latest);
+    const unsub = onSnapshot(doc(db, "rooms", CHAT_ROOM, "reads", partnerKey), (snap) => {
+      setPartnerSeenAt(snap.exists() ? snap.data().at : null);
     }, () => {});
     return unsub;
-  }, [deviceId]);
+  }, [partnerKey]);
 
   useEffect(() => {
-    setDoc(doc(db, "rooms", CHAT_ROOM, "reads", deviceId), { at: serverTimestamp() }).catch(() => {});
-  }, [messages.length, deviceId]);
+    setDoc(doc(db, "rooms", CHAT_ROOM, "reads", accountKey), { at: serverTimestamp() }).catch(() => {});
+  }, [messages.length, accountKey]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
@@ -929,7 +922,7 @@ function ChatScreen({ onBack, profileName }) {
 
   const send = (payload) => {
     addDoc(collection(db, "rooms", CHAT_ROOM, "messages"), {
-      sender: deviceId, senderName: profileName || "Нэргүй", createdAt: serverTimestamp(), ...payload,
+      sender: accountKey, senderName: profileName, createdAt: serverTimestamp(), ...payload,
     }).catch(() => {});
   };
 
@@ -942,7 +935,7 @@ function ChatScreen({ onBack, profileName }) {
 
   const react = (m, emoji) => {
     const next = { ...(m.reactions || {}) };
-    if (next[deviceId] === emoji) delete next[deviceId]; else next[deviceId] = emoji;
+    if (next[accountKey] === emoji) delete next[accountKey]; else next[accountKey] = emoji;
     updateDoc(doc(db, "rooms", CHAT_ROOM, "messages", m.id), { reactions: next }).catch(() => {});
     setReactingTo(null);
   };
@@ -989,7 +982,7 @@ function ChatScreen({ onBack, profileName }) {
     setUploading(false);
   };
 
-  const lastMineId = [...messages].reverse().find((m) => m.sender === deviceId)?.id;
+  const lastMineId = [...messages].reverse().find((m) => m.sender === accountKey)?.id;
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -1002,10 +995,10 @@ function ChatScreen({ onBack, profileName }) {
           </p>
         ) : (
           messages.map((m) => {
-            const mine = m.sender === deviceId;
+            const mine = m.sender === accountKey;
             const media = m.type === "image" || (m.type === "reaction" && m.gifUrl);
             const seen = mine && m.createdAt && partnerSeenAt && m.createdAt.toMillis() <= partnerSeenAt.toMillis();
-            const myReaction = m.reactions?.[deviceId];
+            const myReaction = m.reactions?.[accountKey];
             const reactionList = Object.values(m.reactions || {});
             return (
               <div key={m.id} className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
@@ -1254,24 +1247,61 @@ function HomeCarousel() {
   );
 }
 
+/* ── Нууц үг солих ── */
+function ChangePasswordCard() {
+  const [cur, setCur] = useState("");
+  const [next, setNext] = useState("");
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (!cur || !next || busy) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const cred = EmailAuthProvider.credential(auth.currentUser.email, cur);
+      await reauthenticateWithCredential(auth.currentUser, cred);
+      await updatePassword(auth.currentUser, next);
+      setMsg({ ok: true, text: "Нууц үг солигдлоо" });
+      setCur("");
+      setNext("");
+    } catch {
+      setMsg({ ok: false, text: "Одоогийн нууц үг буруу байна" });
+    }
+    setBusy(false);
+  };
+
+  return (
+    <Card tint="#F8F4FC" className="mb-4">
+      <div className="text-[12.5px] font-extrabold mb-2.5" style={{ color: C.ink }}>Нууц үг солих</div>
+      <div className="space-y-2 mb-2.5">
+        <input type="password" value={cur} onChange={(e) => { setCur(e.target.value); setMsg(null); }}
+          placeholder="Одоогийн нууц үг"
+          className="w-full rounded-full px-4 py-2.5 text-[13px] font-medium outline-none"
+          style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
+        <input type="password" value={next} onChange={(e) => { setNext(e.target.value); setMsg(null); }}
+          onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Шинэ нууц үг"
+          className="w-full rounded-full px-4 py-2.5 text-[13px] font-medium outline-none"
+          style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
+      </div>
+      {msg && (
+        <p className="text-[11px] font-bold mb-2" style={{ color: msg.ok ? C.sageDeep : C.peachDeep }}>{msg.text}</p>
+      )}
+      <button onClick={submit} disabled={!cur || !next || busy}
+        className="w-full rounded-full py-2.5 text-[12.5px] font-extrabold active:scale-[0.97] disabled:opacity-40"
+        style={{ background: C.lilacDeep, color: "#fff", transition: "transform 150ms ease" }}>
+        {busy ? "Хүлээнэ үү..." : "Солих"}
+      </button>
+    </Card>
+  );
+}
+
 /* ── Профайл ── */
-function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, setAvatar, profileName, setProfileName, onBack }) {
+function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, setAvatar, profileName, onBack }) {
   const [picking, setPicking] = useState(false);
-  const [editingName, setEditingName] = useState(false);
-  const [nameDraft, setNameDraft] = useState(profileName);
-  const [taken, setTaken] = useState(false);
-  const [partnerNames, setPartnerNames] = useState([]);
   const fileRef = useRef(null);
-  const deviceId = useMemo(getDeviceId, []);
   const done = items.filter((i) => i.done).length;
   const stTotal = screenApps.reduce((s, a) => s + a.min, 0) + appMin;
-
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, "rooms", CHAT_ROOM, "profiles"), (snap) => {
-      setPartnerNames(snap.docs.filter((d) => d.id !== deviceId).map((d) => (d.data().name || "").trim().toLowerCase()));
-    }, () => {});
-    return unsub;
-  }, [deviceId]);
 
   const onUpload = (e) => {
     const file = e.target.files?.[0];
@@ -1279,16 +1309,6 @@ function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, 
     const reader = new FileReader();
     reader.onload = () => { setAvatar(reader.result); setPicking(false); };
     reader.readAsDataURL(file);
-  };
-
-  const saveName = () => {
-    const n = nameDraft.trim();
-    if (!n) return;
-    if (partnerNames.includes(n.toLowerCase())) { setTaken(true); return; }
-    setTaken(false);
-    setProfileName(n);
-    setDoc(doc(db, "rooms", CHAT_ROOM, "profiles", deviceId), { name: n }).catch(() => {});
-    setEditingName(false);
   };
 
   const exitApp = () => { window.close(); };
@@ -1314,34 +1334,12 @@ function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, 
           </span>
         </button>
         <div className="text-center">
-          {editingName ? (
-            <div>
-              <div className="flex items-center gap-1.5">
-                <input value={nameDraft} onChange={(e) => { setNameDraft(e.target.value); setTaken(false); }}
-                  onKeyDown={(e) => e.key === "Enter" && saveName()} autoFocus
-                  className="text-[14px] font-extrabold text-center rounded-full px-3 py-1 outline-none"
-                  style={{ background: C.card, border: `1.8px solid ${taken ? C.peachDeep : C.line2}`, color: C.ink, width: 140 }} />
-                <button onClick={saveName} className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
-                  style={{ background: C.lilacDeep, color: "#fff" }} aria-label="Хадгалах">
-                  <Check size={13} strokeWidth={2.6} />
-                </button>
-              </div>
-              {taken && (
-                <p className="text-[10px] font-bold mt-1" style={{ color: C.peachDeep }}>
-                  Энэ нэрийг хамтрагч чинь ашиглаж байна
-                </p>
-              )}
-            </div>
-          ) : (
-            <button onClick={() => { setNameDraft(profileName); setEditingName(true); }}
-              className="text-[17px] font-extrabold flex items-center gap-1.5 mx-auto active:scale-95"
-              style={{ color: C.ink, transition: "transform 150ms ease" }}>
-              {profileName || "Нэргүй"} <Pencil size={12} strokeWidth={2.4} style={{ color: C.inkSoft }} />
-            </button>
-          )}
+          <div className="text-[17px] font-extrabold" style={{ color: C.ink }}>{profileName}</div>
           <div className="text-[12px] font-semibold" style={{ color: C.inkSoft }}>Төвлөрөх Хамтрах</div>
         </div>
       </div>
+
+      <ChangePasswordCard />
 
       {picking && (
         <Card tint="#FEF6F1" className="mb-4">
@@ -1392,77 +1390,59 @@ function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, 
   );
 }
 
-/* ── Та хэн бэ (нэг удаагийн нэвтрэлт, нууц үггүй) ── */
-function WhoAreYou({ onDone }) {
-  const [name, setName] = useState("");
-  const [avatar, setAvatarSel] = useState(AVATARS[0]);
-  const [taken, setTaken] = useState(false);
-  const [partnerNames, setPartnerNames] = useState([]);
-  const fileRef = useRef(null);
-  const deviceId = useMemo(getDeviceId, []);
+/* ── Нэвтрэх (зөвхөн 2 fixed account, бүртгүүлэх боломжгүй) ── */
+function LoginScreen() {
+  const [pick, setPick] = useState(null);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, "rooms", CHAT_ROOM, "profiles"), (snap) => {
-      setPartnerNames(snap.docs.filter((d) => d.id !== deviceId).map((d) => (d.data().name || "").trim().toLowerCase()));
-    }, () => {});
-    return unsub;
-  }, [deviceId]);
-
-  const onUpload = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setAvatarSel(reader.result);
-    reader.readAsDataURL(file);
-  };
-
-  const submit = () => {
-    const n = name.trim();
-    if (!n) return;
-    if (partnerNames.includes(n.toLowerCase())) { setTaken(true); return; }
-    setDoc(doc(db, "rooms", CHAT_ROOM, "profiles", deviceId), { name: n }).catch(() => {});
-    onDone(n, avatar);
+  const submit = async () => {
+    if (!pick || !password || loading) return;
+    setLoading(true);
+    setError("");
+    try {
+      await signInWithEmailAndPassword(auth, ACCOUNTS[pick].email, password);
+    } catch {
+      setError("Нууц үг буруу байна");
+    }
+    setLoading(false);
   };
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center min-h-0 text-center">
       <img src={LOGO} alt="" className="w-14 h-14 rounded-[18px] object-cover mb-3"
         style={{ border: `1.5px solid ${C.line2}` }} />
-      <h1 className="text-[19px] font-extrabold mb-1" style={{ color: C.ink }}>Та хэн бэ?</h1>
-      <p className="text-[12px] font-semibold mb-4" style={{ color: C.inkSoft }}>Нэр, зургаа сонгоод эхэлье</p>
+      <h1 className="text-[19px] font-extrabold mb-1" style={{ color: C.ink }}>Нэвтрэх</h1>
+      <p className="text-[12px] font-semibold mb-5" style={{ color: C.inkSoft }}>Хэн бэ? Нууц үгээ оруулна уу</p>
 
-      <img src={avatar} alt="" className="w-[76px] h-[76px] rounded-[24px] object-cover mb-3"
-        style={{ border: `2px solid ${C.line2}` }} />
-
-      <input value={name} onChange={(e) => { setName(e.target.value); setTaken(false); }}
-        onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Нэрээ бичих..."
-        className="w-full max-w-[240px] rounded-full px-4 py-2.5 text-[13.5px] font-medium text-center outline-none mb-1"
-        style={{ background: C.card, border: `1.8px solid ${taken ? C.peachDeep : C.line2}`, color: C.ink }} />
-      <p className="text-[10.5px] font-bold mb-3" style={{ color: taken ? C.peachDeep : "transparent", minHeight: 14 }}>
-        Энэ нэрийг хамтрагч чинь аль хэдийн ашиглаж байна
-      </p>
-
-      <div className="grid grid-cols-4 gap-2 mb-3" style={{ maxWidth: 260 }}>
-        {AVATARS.map((src, i) => (
-          <button key={i} onClick={() => setAvatarSel(src)}
-            className="rounded-2xl overflow-hidden active:scale-95"
-            style={{ border: `2px solid ${avatar === src ? C.peachDeep : C.line}`, transition: "transform 150ms ease" }}>
-            <img src={src} alt="" className="w-full aspect-square object-cover" />
+      <div className="grid grid-cols-2 gap-3 mb-5 w-full" style={{ maxWidth: 260 }}>
+        {Object.entries(ACCOUNTS).map(([key, a]) => (
+          <button key={key} onClick={() => { setPick(key); setError(""); setPassword(""); }}
+            className="rounded-[20px] py-4 text-[14px] font-extrabold active:scale-95"
+            style={{
+              background: pick === key ? C.lilacDeep : C.card,
+              border: `1.8px solid ${pick === key ? C.lilacDeep : C.line2}`,
+              color: pick === key ? "#fff" : C.ink,
+              transition: "all 150ms ease",
+            }}>
+            {a.name}
           </button>
         ))}
       </div>
 
-      <button onClick={() => fileRef.current?.click()}
-        className="rounded-full px-4 py-2 text-[11.5px] font-extrabold flex items-center gap-1.5 active:scale-[0.97] mb-5"
-        style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink, transition: "transform 150ms ease" }}>
-        <Upload size={13} strokeWidth={2.4} /> Өөрийн зураг оруулах
-      </button>
-      <input ref={fileRef} type="file" accept="image/*" onChange={onUpload} className="hidden" />
+      <input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setError(""); }}
+        onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Нууц үг" disabled={!pick} autoFocus
+        className="w-full max-w-[240px] rounded-full px-4 py-2.5 text-[13.5px] font-medium text-center outline-none mb-1 disabled:opacity-40"
+        style={{ background: C.card, border: `1.8px solid ${error ? C.peachDeep : C.line2}`, color: C.ink }} />
+      <p className="text-[10.5px] font-bold mb-3" style={{ color: error ? C.peachDeep : "transparent", minHeight: 14 }}>
+        {error || "Нууц үг буруу байна"}
+      </p>
 
-      <button onClick={submit} disabled={!name.trim()}
+      <button onClick={submit} disabled={!pick || !password || loading}
         className="w-full max-w-[240px] rounded-full py-3 text-[13.5px] font-extrabold active:scale-[0.97] disabled:opacity-40"
         style={{ background: C.lilacDeep, color: "#fff", transition: "transform 150ms ease" }}>
-        Эхлэх
+        {loading ? "Түр хүлээнэ үү..." : "Нэвтрэх"}
       </button>
     </div>
   );
@@ -1594,7 +1574,8 @@ export default function App() {
   const [clock, setClock] = useState(ubParts());
   const [justReset, setJustReset] = useState(false);
   const [avatar, setAvatar] = useState(saved.avatar ?? IC_PROFILE);
-  const [profileName, setProfileName] = useState(saved.profileName ?? "");
+  const [user, setUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
   const [screenApps, setScreenApps] = useState(saved.screenApps ?? []);
   const [screenHistory, setScreenHistory] = useState(saved.screenHistory ?? {});
   const screenAppsRef = useRef(screenApps);
@@ -1613,13 +1594,22 @@ export default function App() {
   );
 
   const goal = useMemo(() => Math.round((weight * 33) / 50) * 50, [weight]);
+  const accountKey = user ? accountKeyFromEmail(user.email) : null;
+  const profileName = accountKey ? ACCOUNTS[accountKey].name : "";
+  const partnerKey = accountKey === "andela" ? "neko" : accountKey === "neko" ? "andela" : null;
 
   useEffect(() => { const t = setTimeout(() => setBooted(true), 2950); return () => clearTimeout(t); }, []);
 
+  /* нэвтэрсэн эсэхийг Firebase Auth-аас сонсоно */
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => { setUser(u); setAuthReady(true); });
+    return unsub;
+  }, []);
+
   /* төлөв бүрийг утсан дээр хадгалж, апп хаагаад дахин нээхэд алдагдахгүй */
   useEffect(() => {
-    localStorage.setItem(STORE_KEY, JSON.stringify({ ml, log, weight, items, day, avatar, profileName, screenApps, screenHistory, appSeconds }));
-  }, [ml, log, weight, items, day, avatar, profileName, screenApps, screenHistory, appSeconds]);
+    localStorage.setItem(STORE_KEY, JSON.stringify({ ml, log, weight, items, day, avatar, screenApps, screenHistory, appSeconds }));
+  }, [ml, log, weight, items, day, avatar, screenApps, screenHistory, appSeconds]);
 
   /* Ankomeow дотор өнгөрүүлсэн бодит цагийг хэмжинэ (дэлгэц идэвхтэй/дэвсгэрт биш үед л нэмэгдэнэ) */
   useEffect(() => {
@@ -1629,29 +1619,22 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
-  /* нэрээ Firestore-той синк хийж, хамтрагчийн профайл жагсаалтад мэдэгдэнэ */
-  useEffect(() => {
-    if (!profileName) return;
-    setDoc(doc(db, "rooms", CHAT_ROOM, "profiles", getDeviceId()), { name: profileName }).catch(() => {});
-  }, [profileName]);
-
   /* өөрийн ус/жагсаалт/дэлгэцийн цагийн явцыг Firestore-т бичиж, хамтрагч харж чадахуйц болгоно */
   useEffect(() => {
-    if (!profileName) return;
-    setDoc(doc(db, "rooms", CHAT_ROOM, "stats", getDeviceId()), {
+    if (!accountKey) return;
+    setDoc(doc(db, "rooms", CHAT_ROOM, "stats", accountKey), {
       name: profileName, day, ml, goal, log, items, screenApps, appMin, screenHistory,
     }).catch(() => {});
-  }, [profileName, day, ml, goal, log, items, screenApps, appMin, screenHistory]);
+  }, [accountKey, profileName, day, ml, goal, log, items, screenApps, appMin, screenHistory]);
 
   /* хамтрагчийн бүртгэлийг бодит цагт сонсоно */
   useEffect(() => {
-    const myId = getDeviceId();
-    const unsub = onSnapshot(collection(db, "rooms", CHAT_ROOM, "stats"), (snap) => {
-      const other = snap.docs.find((d) => d.id !== myId);
-      setPartnerStats(other ? other.data() : null);
+    if (!partnerKey) return;
+    const unsub = onSnapshot(doc(db, "rooms", CHAT_ROOM, "stats", partnerKey), (snap) => {
+      setPartnerStats(snap.exists() ? snap.data() : null);
     }, () => {});
     return unsub;
-  }, []);
+  }, [partnerKey]);
 
   /* PWA суулгах сануулгыг сонсох (Android/Chrome-д л ажиллана) */
   useEffect(() => {
@@ -1777,9 +1760,9 @@ export default function App() {
           <LoadingSequence />
         </div>
 
-        {!profileName ? (
+        {!authReady ? null : !user ? (
           <div className="flex-1 px-5 pt-7 pb-6 min-h-0 flex flex-col">
-            <WhoAreYou onDone={(n, av) => { setProfileName(n); setAvatar(av); }} />
+            <LoginScreen />
           </div>
         ) : (
           <>
@@ -1790,8 +1773,8 @@ export default function App() {
                 {tab === "list" && <ListScreen items={items} setItems={setItems} partner={partnerStats} onBack={() => setTab("home")} />}
                 {tab === "screen" && <ScreenTimeScreen {...{ screenApps, setScreenApps, screenHistory, appMin }} partner={partnerStats} onBack={() => setTab("home")} />}
                 {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} onBack={() => setTab("home")} />}
-                {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, setAvatar, profileName, setProfileName }} gifCount={frames.length} onBack={() => setTab("home")} />}
-                {tab === "chat" && <ChatScreen onBack={() => setTab("home")} profileName={profileName} />}
+                {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, setAvatar, profileName }} gifCount={frames.length} onBack={() => setTab("home")} />}
+                {tab === "chat" && <ChatScreen onBack={() => setTab("home")} profileName={profileName} accountKey={accountKey} partnerKey={partnerKey} />}
               </div>
             </div>
 
