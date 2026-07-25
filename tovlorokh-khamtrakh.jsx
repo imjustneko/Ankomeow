@@ -493,18 +493,19 @@ function ListScreen({ items, setItems, onBack }) {
 const APP_COLORS = [C.peachDeep, "#E08A8A", C.waterDeep, C.sageDeep, C.gold, C.lilacDeep];
 const APP_PRESETS = ["Instagram", "YouTube", "Messenger", "Chrome", "TikTok"];
 
-function ScreenTimeScreen({ screenApps, setScreenApps, screenHistory, onBack }) {
+function ScreenTimeScreen({ screenApps, setScreenApps, screenHistory, appMin, onBack }) {
   const [name, setName] = useState("");
   const [min, setMin] = useState("");
 
-  const total = screenApps.reduce((s, a) => s + a.min, 0);
+  const total = screenApps.reduce((s, a) => s + a.min, 0) + appMin;
 
   const byApp = useMemo(() => {
     const map = new Map();
     screenApps.forEach((a) => map.set(a.name, (map.get(a.name) || 0) + a.min));
-    return Array.from(map, ([n, m], i) => ({ name: n, min: m, color: APP_COLORS[i % APP_COLORS.length] }))
+    const manual = Array.from(map, ([n, m], i) => ({ name: n, min: m, color: APP_COLORS[(i + 1) % APP_COLORS.length], auto: false }))
       .sort((a, b) => b.min - a.min);
-  }, [screenApps]);
+    return appMin > 0 ? [{ name: "Ankomeow", min: appMin, color: APP_COLORS[0], auto: true }, ...manual] : manual;
+  }, [screenApps, appMin]);
   const topMin = Math.max(byApp[0]?.min ?? 1, 1);
 
   const week = useMemo(() => {
@@ -540,7 +541,7 @@ function ScreenTimeScreen({ screenApps, setScreenApps, screenHistory, onBack }) 
           {Math.floor(total / 60)}ц {total % 60}м
         </div>
         <p className="text-[12px] mt-1.5 font-semibold" style={{ color: C.inkSoft }}>
-          Өөрөө нэмсэн бүртгэл дээр үндэслэнэ
+          Ankomeow доторх цаг автоматаар, бусад апп гараар бүртгэгдэнэ
         </p>
         <div className="flex items-end gap-2 h-[78px] mt-4">
           {week.map((w, i) => (
@@ -556,7 +557,7 @@ function ScreenTimeScreen({ screenApps, setScreenApps, screenHistory, onBack }) 
       </Card>
 
       <Card tint="#F8F4FC" className="mb-4">
-        <div className="text-[12.5px] font-extrabold mb-2.5" style={{ color: C.ink }}>Апп нэмэх</div>
+        <div className="text-[12.5px] font-extrabold mb-2.5" style={{ color: C.ink }}>Бусад апп нэмэх (гараар)</div>
         <div className="flex gap-1.5 mb-2.5 flex-wrap">
           {APP_PRESETS.map((p) => (
             <Pill key={p} onClick={() => setName(p)} active={name === p} color={C.peachDeep} className="py-1.5 px-3 text-[11.5px]">
@@ -595,8 +596,15 @@ function ScreenTimeScreen({ screenApps, setScreenApps, screenHistory, onBack }) 
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full shrink-0" style={{ background: a.color, opacity: 0.9 }} />
                 <div className="flex-1">
-                  <div className="flex justify-between text-[13px] mb-1.5">
-                    <span className="font-extrabold" style={{ color: C.ink }}>{a.name}</span>
+                  <div className="flex justify-between items-center text-[13px] mb-1.5">
+                    <span className="flex items-center gap-1.5">
+                      <span className="font-extrabold" style={{ color: C.ink }}>{a.name}</span>
+                      {a.auto && (
+                        <span className="text-[9px] font-extrabold px-1.5 py-[1.5px] rounded-full" style={{ background: C.peach, color: C.peachDeep }}>
+                          АВТОМАТ
+                        </span>
+                      )}
+                    </span>
                     <span className="font-bold" style={{ color: C.inkSoft }}>{a.min} мин</span>
                   </div>
                   <Bar value={a.min} max={topMin} color={a.color} />
@@ -1159,7 +1167,7 @@ function HomeCarousel() {
 }
 
 /* ── Профайл ── */
-function ProfileScreen({ ml, goal, items, gifCount, screenApps, avatar, setAvatar, profileName, setProfileName, onBack }) {
+function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, setAvatar, profileName, setProfileName, onBack }) {
   const [picking, setPicking] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(profileName);
@@ -1168,7 +1176,7 @@ function ProfileScreen({ ml, goal, items, gifCount, screenApps, avatar, setAvata
   const fileRef = useRef(null);
   const deviceId = useMemo(getDeviceId, []);
   const done = items.filter((i) => i.done).length;
-  const stTotal = screenApps.reduce((s, a) => s + a.min, 0);
+  const stTotal = screenApps.reduce((s, a) => s + a.min, 0) + appMin;
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "rooms", CHAT_ROOM, "profiles"), (snap) => {
@@ -1373,11 +1381,11 @@ function WhoAreYou({ onDone }) {
 }
 
 /* ── Нүүр ── */
-function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar, profileName, screenApps, canInstall, isIOS, isStandalone, installDismissed, onInstall, onDismissInstall }) {
+function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, onInstall, onDismissInstall }) {
   const now = new Date();
   const greet = (clock.h < 11 ? "Өглөөний мэнд" : clock.h < 18 ? "Өдрийн мэнд" : "Оройн мэнд") + (profileName ? `, ${profileName}` : "");
   const done = items.filter((i) => i.done).length;
-  const stTotal = screenApps.reduce((s, a) => s + a.min, 0);
+  const stTotal = screenApps.reduce((s, a) => s + a.min, 0) + appMin;
   const left = 86400 - (clock.h * 3600 + clock.m * 60 + clock.s);
 
   return (
@@ -1503,6 +1511,10 @@ export default function App() {
   const [screenHistory, setScreenHistory] = useState(saved.screenHistory ?? {});
   const screenAppsRef = useRef(screenApps);
   screenAppsRef.current = screenApps;
+  const [appSeconds, setAppSeconds] = useState(saved.appSeconds ?? 0);
+  const appSecondsRef = useRef(appSeconds);
+  appSecondsRef.current = appSeconds;
+  const appMin = Math.round(appSeconds / 60);
   const [canInstall, setCanInstall] = useState(!!window.deferredInstallPrompt);
   const [installDismissed, setInstallDismissed] = useState(() => localStorage.getItem("ankomeow-install-dismissed") === "1");
   const isIOS = useMemo(() => /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream, []);
@@ -1517,8 +1529,16 @@ export default function App() {
 
   /* төлөв бүрийг утсан дээр хадгалж, апп хаагаад дахин нээхэд алдагдахгүй */
   useEffect(() => {
-    localStorage.setItem(STORE_KEY, JSON.stringify({ ml, log, weight, items, day, avatar, profileName, screenApps, screenHistory }));
-  }, [ml, log, weight, items, day, avatar, profileName, screenApps, screenHistory]);
+    localStorage.setItem(STORE_KEY, JSON.stringify({ ml, log, weight, items, day, avatar, profileName, screenApps, screenHistory, appSeconds }));
+  }, [ml, log, weight, items, day, avatar, profileName, screenApps, screenHistory, appSeconds]);
+
+  /* Ankomeow дотор өнгөрүүлсэн бодит цагийг хэмжинэ (дэлгэц идэвхтэй/дэвсгэрт биш үед л нэмэгдэнэ) */
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") setAppSeconds((s) => s + 1);
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   /* нэрээ Firestore-той синк хийж, хамтрагчийн профайл жагсаалтад мэдэгдэнэ */
   useEffect(() => {
@@ -1553,9 +1573,10 @@ export default function App() {
       setClock(ubParts());
       const d = ubDay();
       if (d !== day) {
-        const yesterdayTotal = screenAppsRef.current.reduce((s, a) => s + a.min, 0);
+        const yesterdayTotal = screenAppsRef.current.reduce((s, a) => s + a.min, 0) + Math.round(appSecondsRef.current / 60);
         setScreenHistory((h) => ({ ...h, [day]: yesterdayTotal }));
         setScreenApps([]);
+        setAppSeconds(0);
         setDay(d);
         setMl(0);
         setLog([]);
@@ -1657,12 +1678,12 @@ export default function App() {
           <>
             <div className={`flex-1 px-5 pt-7 min-h-0 flex flex-col ${tab === "chat" ? "pb-3" : "pb-4 overflow-y-auto overscroll-contain"}`}>
               <div key={tab} className={`scr ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
-                {tab === "home" && <HomeScreen go={setTab} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, canInstall, isIOS, isStandalone, installDismissed }} onInstall={installApp} onDismissInstall={dismissInstall} gifCount={frames.length} />}
+                {tab === "home" && <HomeScreen go={setTab} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed }} onInstall={installApp} onDismissInstall={dismissInstall} gifCount={frames.length} />}
                 {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} onBack={() => setTab("home")} />}
                 {tab === "list" && <ListScreen items={items} setItems={setItems} onBack={() => setTab("home")} />}
-                {tab === "screen" && <ScreenTimeScreen {...{ screenApps, setScreenApps, screenHistory }} onBack={() => setTab("home")} />}
+                {tab === "screen" && <ScreenTimeScreen {...{ screenApps, setScreenApps, screenHistory, appMin }} onBack={() => setTab("home")} />}
                 {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} onBack={() => setTab("home")} />}
-                {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, avatar, setAvatar, profileName, setProfileName }} gifCount={frames.length} onBack={() => setTab("home")} />}
+                {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, setAvatar, profileName, setProfileName }} gifCount={frames.length} onBack={() => setTab("home")} />}
                 {tab === "chat" && <ChatScreen onBack={() => setTab("home")} profileName={profileName} />}
               </div>
             </div>
