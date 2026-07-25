@@ -278,6 +278,25 @@ function Header({ title, sub, onBack }) {
   );
 }
 
+function MineToggle({ mine, setMine, partnerName }) {
+  return (
+    <div className="flex gap-1 mb-4 p-1 rounded-full" style={{ background: C.cardIn }}>
+      {[{ k: true, l: "Миний" }, { k: false, l: partnerName || "Түншийн" }].map((o) => (
+        <button key={String(o.k)} onClick={() => setMine(o.k)}
+          className="flex-1 rounded-full py-2 text-[12.5px] font-extrabold active:scale-[0.97]"
+          style={{
+            background: mine === o.k ? C.card : "transparent",
+            color: mine === o.k ? C.ink : C.inkSoft,
+            boxShadow: mine === o.k ? "0 1px 3px rgba(92,74,58,.15)" : "none",
+            transition: "all 180ms ease",
+          }}>
+          {o.l}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /* ── Апп суулгах ── */
 function InstallBanner({ canInstall, isIOS, onInstall, onDismiss }) {
   const [showIOSHelp, setShowIOSHelp] = useState(false);
@@ -331,9 +350,10 @@ function InstallBanner({ canInstall, isIOS, onInstall, onDismiss }) {
 }
 
 /* ── Ус ── */
-function WaterScreen({ ml, setMl, log, setLog, weight, setWeight, goal, onBack }) {
+function WaterScreen({ ml, setMl, log, setLog, weight, setWeight, goal, partner, onBack }) {
   const [spillKey, setSpillKey] = useState(0);
   const [spilling, setSpilling] = useState(false);
+  const [mine, setMine] = useState(true);
   const timer = useRef(null);
 
   const cups = [
@@ -361,78 +381,113 @@ function WaterScreen({ ml, setMl, log, setLog, weight, setWeight, goal, onBack }
   useEffect(() => () => clearTimeout(timer.current), []);
 
   const over = ml > goal;
+  const pGoal = partner?.goal || 1;
+  const pOver = !!partner && partner.ml > pGoal;
 
   return (
     <div>
-      <Header title="Ус уух" sub={`${ml} / ${goal} мл · ${Math.floor(ml / 250)} аяга`} onBack={onBack} />
+      <Header title="Ус уух"
+        sub={mine ? `${ml} / ${goal} мл · ${Math.floor(ml / 250)} аяга` : `${partner?.ml ?? 0} / ${pGoal} мл`}
+        onBack={onBack} />
 
-      <div className="flex justify-center mb-2"><Glass {...{ ml, goal, spillKey, spilling, over }} /></div>
+      {partner && <MineToggle mine={mine} setMine={setMine} partnerName={partner.name} />}
 
-      {over && (
-        <div className="rounded-full px-4 py-2 mb-4 text-center text-[12.5px] font-bold"
-          style={{ background: C.peach, color: "#fff" }}>
-          {ml > goal * 1.5
-            ? "Нэлээд давлаа — жигд хуваарилж уувал биед зөв"
-            : "Аяга дүүрч асгарлаа! Зорилго биелсэн 🎉"}
-        </div>
-      )}
+      {mine ? (
+        <>
+          <div className="flex justify-center mb-2"><Glass {...{ ml, goal, spillKey, spilling, over }} /></div>
 
-      <div className="grid grid-cols-4 gap-2 mb-2">
-        {cups.map((c) => (
-          <button key={c.v} onClick={() => add(c.v)}
-            className="rounded-full py-3 active:scale-95"
-            style={{ background: C.card, border: `1.8px solid ${C.line2}`, transition: "transform 150ms ease" }}>
-            <div className="text-[13px] font-extrabold" style={{ color: C.waterDeep }}>{c.v} мл</div>
-            <div className="text-[9.5px] font-semibold mt-0.5" style={{ color: C.inkSoft }}>{c.label}</div>
-          </button>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-3 gap-2 mb-3">
-        {cupCounts.map((c) => (
-          <Pill key={c.v} onClick={() => add(c.v)} className="py-2 text-[12px]">{c.label}</Pill>
-        ))}
-      </div>
-
-      <div className="flex gap-2 mb-5">
-        <Pill onClick={() => add(-100)} className="flex-1 py-2.5 text-[12.5px]">−100 мл буцаах</Pill>
-        <Pill onClick={() => { setMl(0); setLog([]); }} className="px-4" aria-label="Тэглэх">
-          <RotateCcw size={16} strokeWidth={2.2} />
-        </Pill>
-      </div>
-
-      <Card tint="#F4FBFE" className="mb-4">
-        <div className="flex justify-between items-baseline mb-2.5">
-          <span className="text-[13px] font-extrabold" style={{ color: C.ink }}>Өдрийн зорилго</span>
-          <span className="text-[12px] font-bold" style={{ color: C.waterDeep }}>{weight} кг → {goal} мл</span>
-        </div>
-        <input type="range" min="35" max="120" value={weight} onChange={(e) => setWeight(+e.target.value)} className="w-full" />
-        <p className="text-[11px] mt-2 font-medium" style={{ color: C.inkSoft }}>Биеийн жин × 33 мл-ээр тооцов.</p>
-      </Card>
-
-      <div className="text-[13px] font-extrabold mb-2" style={{ color: C.ink }}>Өнөөдрийн бүртгэл</div>
-      {log.length === 0 ? (
-        <p className="text-[12px] py-3 font-medium" style={{ color: C.inkSoft }}>Хоосон байна. Дээрх товчнуудаас нэмнэ үү.</p>
-      ) : (
-        <div className="space-y-1.5">
-          {log.slice(0, 8).map((e, i) => (
-            <div key={i} className="flex items-center gap-2.5 text-[12.5px] py-2 px-3 rounded-full"
-              style={{ background: C.card, border: `1.5px solid ${C.line}`, color: C.ink }}>
-              <img src={IC_WATER} alt="" className="w-5 h-5 rounded-full object-cover" />
-              <span className="font-semibold">{e.t}</span>
-              <span className="ml-auto font-extrabold" style={{ color: C.waterDeep }}>+{e.v} мл</span>
+          {over && (
+            <div className="rounded-full px-4 py-2 mb-4 text-center text-[12.5px] font-bold"
+              style={{ background: C.peach, color: "#fff" }}>
+              {ml > goal * 1.5
+                ? "Нэлээд давлаа — жигд хуваарилж уувал биед зөв"
+                : "Аяга дүүрч асгарлаа! Зорилго биелсэн 🎉"}
             </div>
-          ))}
-        </div>
+          )}
+
+          <div className="grid grid-cols-4 gap-2 mb-2">
+            {cups.map((c) => (
+              <button key={c.v} onClick={() => add(c.v)}
+                className="rounded-full py-3 active:scale-95"
+                style={{ background: C.card, border: `1.8px solid ${C.line2}`, transition: "transform 150ms ease" }}>
+                <div className="text-[13px] font-extrabold" style={{ color: C.waterDeep }}>{c.v} мл</div>
+                <div className="text-[9.5px] font-semibold mt-0.5" style={{ color: C.inkSoft }}>{c.label}</div>
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            {cupCounts.map((c) => (
+              <Pill key={c.v} onClick={() => add(c.v)} className="py-2 text-[12px]">{c.label}</Pill>
+            ))}
+          </div>
+
+          <div className="flex gap-2 mb-5">
+            <Pill onClick={() => add(-100)} className="flex-1 py-2.5 text-[12.5px]">−100 мл буцаах</Pill>
+            <Pill onClick={() => { setMl(0); setLog([]); }} className="px-4" aria-label="Тэглэх">
+              <RotateCcw size={16} strokeWidth={2.2} />
+            </Pill>
+          </div>
+
+          <Card tint="#F4FBFE" className="mb-4">
+            <div className="flex justify-between items-baseline mb-2.5">
+              <span className="text-[13px] font-extrabold" style={{ color: C.ink }}>Өдрийн зорилго</span>
+              <span className="text-[12px] font-bold" style={{ color: C.waterDeep }}>{weight} кг → {goal} мл</span>
+            </div>
+            <input type="range" min="35" max="120" value={weight} onChange={(e) => setWeight(+e.target.value)} className="w-full" />
+            <p className="text-[11px] mt-2 font-medium" style={{ color: C.inkSoft }}>Биеийн жин × 33 мл-ээр тооцов.</p>
+          </Card>
+
+          <div className="text-[13px] font-extrabold mb-2" style={{ color: C.ink }}>Өнөөдрийн бүртгэл</div>
+          {log.length === 0 ? (
+            <p className="text-[12px] py-3 font-medium" style={{ color: C.inkSoft }}>Хоосон байна. Дээрх товчнуудаас нэмнэ үү.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {log.slice(0, 8).map((e, i) => (
+                <div key={i} className="flex items-center gap-2.5 text-[12.5px] py-2 px-3 rounded-full"
+                  style={{ background: C.card, border: `1.5px solid ${C.line}`, color: C.ink }}>
+                  <img src={IC_WATER} alt="" className="w-5 h-5 rounded-full object-cover" />
+                  <span className="font-semibold">{e.t}</span>
+                  <span className="ml-auto font-extrabold" style={{ color: C.waterDeep }}>+{e.v} мл</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <div className="flex justify-center mb-2">
+            <Glass ml={partner?.ml ?? 0} goal={pGoal} spillKey={0} spilling={false} over={pOver} />
+          </div>
+
+          <div className="text-[13px] font-extrabold mb-2" style={{ color: C.ink }}>Өнөөдрийн бүртгэл</div>
+          {!partner?.log?.length ? (
+            <p className="text-[12px] py-3 font-medium" style={{ color: C.inkSoft }}>Хоосон байна.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {partner.log.slice(0, 8).map((e, i) => (
+                <div key={i} className="flex items-center gap-2.5 text-[12.5px] py-2 px-3 rounded-full"
+                  style={{ background: C.card, border: `1.5px solid ${C.line}`, color: C.ink }}>
+                  <img src={IC_WATER} alt="" className="w-5 h-5 rounded-full object-cover" />
+                  <span className="font-semibold">{e.t}</span>
+                  <span className="ml-auto font-extrabold" style={{ color: C.waterDeep }}>+{e.v} мл</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
 }
 
 /* ── Жагсаалт ── */
-function ListScreen({ items, setItems, onBack }) {
+function ListScreen({ items, setItems, partner, onBack }) {
   const [text, setText] = useState("");
+  const [mine, setMine] = useState(true);
   const done = items.filter((i) => i.done).length;
+  const pItems = partner?.items || [];
+  const pDone = pItems.filter((i) => i.done).length;
   const addItem = () => {
     const t = text.trim();
     if (!t) return;
@@ -442,7 +497,11 @@ function ListScreen({ items, setItems, onBack }) {
 
   return (
     <div>
-      <Header title="Нэг жагсаалт" sub={`${done}/${items.length} биелсэн`} onBack={onBack} />
+      <Header title="Нэг жагсаалт"
+        sub={mine ? `${done}/${items.length} биелсэн` : `${pDone}/${pItems.length} биелсэн`}
+        onBack={onBack} />
+
+      {partner && <MineToggle mine={mine} setMine={setMine} partnerName={partner.name} />}
 
       <Card tint="#F5FBF3" className="mb-4">
         <div className="flex items-center gap-3">
@@ -450,41 +509,62 @@ function ListScreen({ items, setItems, onBack }) {
             style={{ border: `1.5px solid ${C.line}` }} />
           <div className="flex-1">
             <div className="text-[13px] font-extrabold mb-2" style={{ color: C.ink }}>Өнөөдрийн явц</div>
-            <Bar value={done} max={Math.max(items.length, 1)} color={C.sageDeep} />
+            <Bar value={mine ? done : pDone} max={Math.max(mine ? items.length : pItems.length, 1)} color={C.sageDeep} />
           </div>
         </div>
       </Card>
 
-      <div className="flex gap-2 mb-4">
-        <input value={text} onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && addItem()} placeholder="Юу хийх вэ?"
-          className="flex-1 rounded-full px-5 py-2.5 text-[14px] font-medium outline-none"
-          style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
-        <button onClick={addItem} className="shrink-0 active:scale-95" style={{ transition: "transform 150ms ease" }} aria-label="Нэмэх">
-          <img src={BTN_ADD} alt="Нэмэх" className="h-[42px] w-auto" />
-        </button>
-      </div>
-
-      <div className="space-y-2">
-        {items.map((it) => (
-          <div key={it.id} className="flex items-center gap-3 rounded-full px-4 py-3"
-            style={{ background: it.done ? "#F5FBF3" : C.card, border: `1.5px solid ${C.line}` }}>
-            <button onClick={() => setItems((l) => l.map((x) => x.id === it.id ? { ...x, done: !x.done } : x))}
-              className="w-[24px] h-[24px] rounded-full flex items-center justify-center shrink-0"
-              style={{ border: `2px solid ${it.done ? C.sageDeep : C.line2}`, background: it.done ? C.sageDeep : "transparent" }}
-              aria-label="Тэмдэглэх">
-              {it.done && <Check size={14} strokeWidth={3.2} color="#fff" />}
-            </button>
-            <span className="flex-1 text-[14px] font-semibold" style={{
-              color: it.done ? C.inkSoft : C.ink, textDecoration: it.done ? "line-through" : "none",
-            }}>{it.text}</span>
-            <button onClick={() => setItems((l) => l.filter((x) => x.id !== it.id))}
-              style={{ color: C.inkSoft }} aria-label="Устгах">
-              <Trash2 size={15} strokeWidth={2} />
+      {mine ? (
+        <>
+          <div className="flex gap-2 mb-4">
+            <input value={text} onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addItem()} placeholder="Юу хийх вэ?"
+              className="flex-1 rounded-full px-5 py-2.5 text-[14px] font-medium outline-none"
+              style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
+            <button onClick={addItem} className="shrink-0 active:scale-95" style={{ transition: "transform 150ms ease" }} aria-label="Нэмэх">
+              <img src={BTN_ADD} alt="Нэмэх" className="h-[42px] w-auto" />
             </button>
           </div>
-        ))}
-      </div>
+
+          <div className="space-y-2">
+            {items.map((it) => (
+              <div key={it.id} className="flex items-center gap-3 rounded-full px-4 py-3"
+                style={{ background: it.done ? "#F5FBF3" : C.card, border: `1.5px solid ${C.line}` }}>
+                <button onClick={() => setItems((l) => l.map((x) => x.id === it.id ? { ...x, done: !x.done } : x))}
+                  className="w-[24px] h-[24px] rounded-full flex items-center justify-center shrink-0"
+                  style={{ border: `2px solid ${it.done ? C.sageDeep : C.line2}`, background: it.done ? C.sageDeep : "transparent" }}
+                  aria-label="Тэмдэглэх">
+                  {it.done && <Check size={14} strokeWidth={3.2} color="#fff" />}
+                </button>
+                <span className="flex-1 text-[14px] font-semibold" style={{
+                  color: it.done ? C.inkSoft : C.ink, textDecoration: it.done ? "line-through" : "none",
+                }}>{it.text}</span>
+                <button onClick={() => setItems((l) => l.filter((x) => x.id !== it.id))}
+                  style={{ color: C.inkSoft }} aria-label="Устгах">
+                  <Trash2 size={15} strokeWidth={2} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="space-y-2">
+          {pItems.length === 0 ? (
+            <p className="text-[12px] py-3 font-medium" style={{ color: C.inkSoft }}>Хоосон байна.</p>
+          ) : pItems.map((it) => (
+            <div key={it.id} className="flex items-center gap-3 rounded-full px-4 py-3"
+              style={{ background: it.done ? "#F5FBF3" : C.card, border: `1.5px solid ${C.line}` }}>
+              <div className="w-[24px] h-[24px] rounded-full flex items-center justify-center shrink-0"
+                style={{ border: `2px solid ${it.done ? C.sageDeep : C.line2}`, background: it.done ? C.sageDeep : "transparent" }}>
+                {it.done && <Check size={14} strokeWidth={3.2} color="#fff" />}
+              </div>
+              <span className="flex-1 text-[14px] font-semibold" style={{
+                color: it.done ? C.inkSoft : C.ink, textDecoration: it.done ? "line-through" : "none",
+              }}>{it.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -493,19 +573,23 @@ function ListScreen({ items, setItems, onBack }) {
 const APP_COLORS = [C.peachDeep, "#E08A8A", C.waterDeep, C.sageDeep, C.gold, C.lilacDeep];
 const APP_PRESETS = ["Instagram", "YouTube", "Messenger", "Chrome", "TikTok"];
 
-function ScreenTimeScreen({ screenApps, setScreenApps, screenHistory, appMin, onBack }) {
+function ScreenTimeScreen({ screenApps, setScreenApps, screenHistory, appMin, partner, onBack }) {
   const [name, setName] = useState("");
   const [min, setMin] = useState("");
+  const [mine, setMine] = useState(true);
 
-  const total = screenApps.reduce((s, a) => s + a.min, 0) + appMin;
+  const activeApps = mine ? screenApps : (partner?.screenApps || []);
+  const activeAppMin = mine ? appMin : (partner?.appMin || 0);
+  const activeHistory = mine ? screenHistory : (partner?.screenHistory || {});
+  const total = activeApps.reduce((s, a) => s + a.min, 0) + activeAppMin;
 
   const byApp = useMemo(() => {
     const map = new Map();
-    screenApps.forEach((a) => map.set(a.name, (map.get(a.name) || 0) + a.min));
+    activeApps.forEach((a) => map.set(a.name, (map.get(a.name) || 0) + a.min));
     const manual = Array.from(map, ([n, m], i) => ({ name: n, min: m, color: APP_COLORS[(i + 1) % APP_COLORS.length], auto: false }))
       .sort((a, b) => b.min - a.min);
-    return appMin > 0 ? [{ name: "Ankomeow", min: appMin, color: APP_COLORS[0], auto: true }, ...manual] : manual;
-  }, [screenApps, appMin]);
+    return activeAppMin > 0 ? [{ name: "Ankomeow", min: activeAppMin, color: APP_COLORS[0], auto: true }, ...manual] : manual;
+  }, [activeApps, activeAppMin]);
   const topMin = Math.max(byApp[0]?.min ?? 1, 1);
 
   const week = useMemo(() => {
@@ -514,10 +598,10 @@ function ScreenTimeScreen({ screenApps, setScreenApps, screenHistory, appMin, on
       const d = new Date();
       d.setDate(d.getDate() - i);
       const key = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
-      out.push({ key, label: DAYS[d.getDay()][0], v: i === 0 ? total : (screenHistory[key] || 0) });
+      out.push({ key, label: DAYS[d.getDay()][0], v: i === 0 ? total : (activeHistory[key] || 0) });
     }
     return out;
-  }, [screenHistory, total]);
+  }, [activeHistory, total]);
   const maxW = Math.max(...week.map((w) => w.v), 1);
 
   const addEntry = () => {
@@ -535,6 +619,8 @@ function ScreenTimeScreen({ screenApps, setScreenApps, screenHistory, appMin, on
         <Header title="Дэлгэцийн цаг" sub="Өнөөдөр" onBack={onBack} />
         <img src={BTN_REPORT} alt="Тайлан" className="h-[34px] w-auto shrink-0 mt-1" />
       </div>
+
+      {partner && <MineToggle mine={mine} setMine={setMine} partnerName={partner.name} />}
 
       <Card tint="#FEF6F1" className="mb-4">
         <div className="text-[36px] font-extrabold leading-none" style={{ color: C.peachDeep }}>
@@ -556,39 +642,41 @@ function ScreenTimeScreen({ screenApps, setScreenApps, screenHistory, appMin, on
         </div>
       </Card>
 
-      <Card tint="#F8F4FC" className="mb-4">
-        <div className="text-[12.5px] font-extrabold mb-2.5" style={{ color: C.ink }}>Бусад апп нэмэх (гараар)</div>
-        <div className="flex gap-1.5 mb-2.5 flex-wrap">
-          {APP_PRESETS.map((p) => (
-            <Pill key={p} onClick={() => setName(p)} active={name === p} color={C.peachDeep} className="py-1.5 px-3 text-[11.5px]">
-              {p}
-            </Pill>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Аппын нэр"
-            className="flex-1 min-w-0 rounded-full px-4 py-2.5 text-[13px] font-medium outline-none"
-            style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
-          <input value={min} onChange={(e) => setMin(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addEntry()}
-            type="number" inputMode="numeric" placeholder="мин"
-            className="w-[68px] shrink-0 rounded-full px-3 py-2.5 text-[13px] font-medium outline-none text-center"
-            style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
-          <button onClick={addEntry} className="shrink-0 active:scale-95" style={{ transition: "transform 150ms ease" }} aria-label="Нэмэх">
-            <img src={BTN_ADD} alt="Нэмэх" className="h-[42px] w-auto" />
-          </button>
-        </div>
-      </Card>
+      {mine && (
+        <Card tint="#F8F4FC" className="mb-4">
+          <div className="text-[12.5px] font-extrabold mb-2.5" style={{ color: C.ink }}>Бусад апп нэмэх (гараар)</div>
+          <div className="flex gap-1.5 mb-2.5 flex-wrap">
+            {APP_PRESETS.map((p) => (
+              <Pill key={p} onClick={() => setName(p)} active={name === p} color={C.peachDeep} className="py-1.5 px-3 text-[11.5px]">
+                {p}
+              </Pill>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Аппын нэр"
+              className="flex-1 min-w-0 rounded-full px-4 py-2.5 text-[13px] font-medium outline-none"
+              style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
+            <input value={min} onChange={(e) => setMin(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addEntry()}
+              type="number" inputMode="numeric" placeholder="мин"
+              className="w-[68px] shrink-0 rounded-full px-3 py-2.5 text-[13px] font-medium outline-none text-center"
+              style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
+            <button onClick={addEntry} className="shrink-0 active:scale-95" style={{ transition: "transform 150ms ease" }} aria-label="Нэмэх">
+              <img src={BTN_ADD} alt="Нэмэх" className="h-[42px] w-auto" />
+            </button>
+          </div>
+        </Card>
+      )}
 
       <div className="flex items-center justify-between mb-2.5">
         <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Аппаар</div>
-        {screenApps.length > 0 && (
+        {mine && screenApps.length > 0 && (
           <button onClick={() => setScreenApps([])} className="text-[11px] font-bold flex items-center gap-1" style={{ color: C.inkSoft }}>
             <RotateCcw size={12} strokeWidth={2.2} /> Тэглэх
           </button>
         )}
       </div>
       {byApp.length === 0 ? (
-        <p className="text-[12px] py-3 font-medium" style={{ color: C.inkSoft }}>Хоосон байна. Дээрх талбараас нэмнэ үү.</p>
+        <p className="text-[12px] py-3 font-medium" style={{ color: C.inkSoft }}>Хоосон байна. {mine && "Дээрх талбараас нэмнэ үү."}</p>
       ) : (
         <div className="space-y-2.5">
           {byApp.map((a) => (
@@ -1515,6 +1603,7 @@ export default function App() {
   const appSecondsRef = useRef(appSeconds);
   appSecondsRef.current = appSeconds;
   const appMin = Math.round(appSeconds / 60);
+  const [partnerStats, setPartnerStats] = useState(null);
   const [canInstall, setCanInstall] = useState(!!window.deferredInstallPrompt);
   const [installDismissed, setInstallDismissed] = useState(() => localStorage.getItem("ankomeow-install-dismissed") === "1");
   const isIOS = useMemo(() => /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream, []);
@@ -1545,6 +1634,24 @@ export default function App() {
     if (!profileName) return;
     setDoc(doc(db, "rooms", CHAT_ROOM, "profiles", getDeviceId()), { name: profileName }).catch(() => {});
   }, [profileName]);
+
+  /* өөрийн ус/жагсаалт/дэлгэцийн цагийн явцыг Firestore-т бичиж, хамтрагч харж чадахуйц болгоно */
+  useEffect(() => {
+    if (!profileName) return;
+    setDoc(doc(db, "rooms", CHAT_ROOM, "stats", getDeviceId()), {
+      name: profileName, day, ml, goal, log, items, screenApps, appMin, screenHistory,
+    }).catch(() => {});
+  }, [profileName, day, ml, goal, log, items, screenApps, appMin, screenHistory]);
+
+  /* хамтрагчийн бүртгэлийг бодит цагт сонсоно */
+  useEffect(() => {
+    const myId = getDeviceId();
+    const unsub = onSnapshot(collection(db, "rooms", CHAT_ROOM, "stats"), (snap) => {
+      const other = snap.docs.find((d) => d.id !== myId);
+      setPartnerStats(other ? other.data() : null);
+    }, () => {});
+    return unsub;
+  }, []);
 
   /* PWA суулгах сануулгыг сонсох (Android/Chrome-д л ажиллана) */
   useEffect(() => {
@@ -1679,9 +1786,9 @@ export default function App() {
             <div className={`flex-1 px-5 pt-7 min-h-0 flex flex-col ${tab === "chat" ? "pb-3" : "pb-4 overflow-y-auto overscroll-contain"}`}>
               <div key={tab} className={`scr ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
                 {tab === "home" && <HomeScreen go={setTab} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed }} onInstall={installApp} onDismissInstall={dismissInstall} gifCount={frames.length} />}
-                {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} onBack={() => setTab("home")} />}
-                {tab === "list" && <ListScreen items={items} setItems={setItems} onBack={() => setTab("home")} />}
-                {tab === "screen" && <ScreenTimeScreen {...{ screenApps, setScreenApps, screenHistory, appMin }} onBack={() => setTab("home")} />}
+                {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} partner={partnerStats} onBack={() => setTab("home")} />}
+                {tab === "list" && <ListScreen items={items} setItems={setItems} partner={partnerStats} onBack={() => setTab("home")} />}
+                {tab === "screen" && <ScreenTimeScreen {...{ screenApps, setScreenApps, screenHistory, appMin }} partner={partnerStats} onBack={() => setTab("home")} />}
                 {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} onBack={() => setTab("home")} />}
                 {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, setAvatar, profileName, setProfileName }} gifCount={frames.length} onBack={() => setTab("home")} />}
                 {tab === "chat" && <ChatScreen onBack={() => setTab("home")} profileName={profileName} />}
