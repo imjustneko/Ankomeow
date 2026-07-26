@@ -345,31 +345,6 @@ function InstallBanner({ canInstall, isIOS, onInstall, onDismiss }) {
   );
 }
 
-function UpdateBanner({ show, onApply }) {
-  if (!show) return null;
-  return (
-    <div className="rounded-[22px] p-4 mb-4" style={{
-      background: `linear-gradient(158deg, #F5FBF3 0%, ${C.card} 130%)`,
-      border: `1.5px solid ${C.line}`, boxShadow: "0 2px 0 rgba(92,74,58,.05), 0 1px 0 rgba(255,255,255,.8) inset",
-    }}>
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.sageDeep }}>
-          <RefreshCw size={17} strokeWidth={2.2} color="#fff" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Шинэ хувилбар гарлаа</div>
-          <div className="text-[11.5px] font-medium" style={{ color: C.inkSoft }}>Шинэчлээд дахин ачааллаарай</div>
-        </div>
-      </div>
-      <button onClick={onApply}
-        className="w-full mt-3 rounded-full py-2.5 text-[12.5px] font-extrabold flex items-center justify-center gap-2 active:scale-[0.97]"
-        style={{ background: C.sageDeep, color: "#fff", transition: "transform 150ms ease" }}>
-        <RefreshCw size={15} strokeWidth={2.4} /> Шинэчлэх
-      </button>
-    </div>
-  );
-}
-
 /* ── Ус ── */
 function WaterScreen({ ml, setMl, log, setLog, weight, setWeight, goal, partner, onBack }) {
   const [spillKey, setSpillKey] = useState(0);
@@ -890,6 +865,20 @@ const compressImage = (file, maxDim, quality) => new Promise((resolve, reject) =
   reader.readAsDataURL(file);
 });
 
+const compressDataUrl = (dataUrl, maxDim, quality) => new Promise((resolve, reject) => {
+  const img = new Image();
+  img.onerror = reject;
+  img.onload = () => {
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+    const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+    resolve(canvas.toDataURL("image/jpeg", quality));
+  };
+  img.src = dataUrl;
+});
+
 function ChatScreen({ onBack, profileName, accountKey, partnerKey }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
@@ -1397,6 +1386,76 @@ function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, 
   );
 }
 
+/* ── Хамтрагчийн явц (зөвхөн харах) ── */
+function PartnerScreen({ partner, accountKey, partnerKey, onBack }) {
+  const items = partner?.items || [];
+  const done = items.filter((i) => i.done).length;
+  const stTotal = (partner?.screenApps || []).reduce((s, a) => s + a.min, 0) + (partner?.appMin || 0);
+  const gifCount = (partner?.gifFrames || []).length;
+  const ml = partner?.ml ?? 0;
+  const goal = partner?.goal || 1;
+
+  useEffect(() => {
+    if (!partnerKey || !accountKey) return;
+    setDoc(doc(db, "rooms", CHAT_ROOM, "peeks", partnerKey), { from: accountKey, at: serverTimestamp() }).catch(() => {});
+  }, [partnerKey, accountKey]);
+
+  return (
+    <div>
+      <Header title={partner?.name || "Хамтрагч"} sub="Өнөөдрийн явц" onBack={onBack} />
+
+      <div className="flex flex-col items-center gap-3 mb-5">
+        <img src={partner?.avatar || IC_PROFILE} alt="" className="w-20 h-20 rounded-[26px] object-cover"
+          style={{ border: `2px solid ${C.line2}` }} />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 mb-5">
+        <Card tint="#F4FBFE">
+          <div className="text-[11.5px] font-bold mb-1" style={{ color: C.waterDeep }}>Ус</div>
+          <div className="text-[15px] font-extrabold mb-1.5" style={{ color: C.ink }}>{ml} / {goal} мл</div>
+          <Bar value={ml} max={goal} color={C.waterDeep} />
+        </Card>
+        <Card tint="#F5FBF3">
+          <div className="text-[11.5px] font-bold mb-1" style={{ color: C.sageDeep }}>Жагсаалт</div>
+          <div className="text-[15px] font-extrabold mb-1.5" style={{ color: C.ink }}>{done}/{items.length}</div>
+          <Bar value={done} max={Math.max(items.length, 1)} color={C.sageDeep} />
+        </Card>
+        <Card tint="#FEF6F1">
+          <div className="text-[11.5px] font-bold mb-1" style={{ color: C.peachDeep }}>Дэлгэц</div>
+          <div className="text-[15px] font-extrabold mb-1.5" style={{ color: C.ink }}>
+            {Math.floor(stTotal / 60)}ц {stTotal % 60}м
+          </div>
+          <Bar value={stTotal} max={240} color={C.peachDeep} />
+        </Card>
+        <Card tint="#F8F4FC">
+          <div className="text-[11.5px] font-bold mb-1" style={{ color: C.lilacDeep }}>GIF</div>
+          <div className="text-[15px] font-extrabold" style={{ color: C.ink }}>{gifCount} кадр</div>
+        </Card>
+      </div>
+
+      <div className="text-[13px] font-extrabold mb-2.5" style={{ color: C.ink }}>Жагсаалт</div>
+      {items.length === 0 ? (
+        <p className="text-[12px] py-3 font-medium" style={{ color: C.inkSoft }}>Хоосон байна.</p>
+      ) : (
+        <div className="space-y-2">
+          {items.map((it) => (
+            <div key={it.id} className="flex items-center gap-3 rounded-full px-4 py-3"
+              style={{ background: it.done ? "#F5FBF3" : C.card, border: `1.5px solid ${C.line}` }}>
+              <div className="w-[24px] h-[24px] rounded-full flex items-center justify-center shrink-0"
+                style={{ border: `2px solid ${it.done ? C.sageDeep : C.line2}`, background: it.done ? C.sageDeep : "transparent" }}>
+                {it.done && <Check size={14} strokeWidth={3.2} color="#fff" />}
+              </div>
+              <span className="flex-1 text-[14px] font-semibold" style={{
+                color: it.done ? C.inkSoft : C.ink, textDecoration: it.done ? "line-through" : "none",
+              }}>{it.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Нэвтрэх (зөвхөн 2 fixed account, бүртгүүлэх боломжгүй) ── */
 function LoginScreen() {
   const [pick, setPick] = useState(null);
@@ -1463,12 +1522,6 @@ function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar, p
   const stTotal = screenApps.reduce((s, a) => s + a.min, 0) + appMin;
   const left = 86400 - (clock.h * 3600 + clock.m * 60 + clock.s);
 
-  const pItems = partner?.items || [];
-  const pDone = pItems.filter((i) => i.done).length;
-  const pMl = partner?.ml ?? 0;
-  const pGoal = partner?.goal || 1;
-  const pScreenMin = (partner?.screenApps || []).reduce((s, a) => s + a.min, 0) + (partner?.appMin || 0);
-
   return (
     <div>
       <div className="sticky top-0 z-10 -mx-5 -mt-7 px-5 pt-7 pb-1 flex items-center gap-3"
@@ -1490,8 +1543,6 @@ function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar, p
 
       <img src={WELCOME_HERO} alt="Тавтай морил" className="w-full rounded-[22px] mb-4 object-cover"
         style={{ border: `1.5px solid ${C.line2}` }} />
-
-      <UpdateBanner show={updateAvailable} onApply={onApplyUpdate} />
 
       {!isStandalone && !installDismissed && (
         <InstallBanner canInstall={canInstall} isIOS={isIOS} onInstall={onInstall} onDismiss={onDismissInstall} />
@@ -1543,29 +1594,26 @@ function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar, p
         </Card>
       </div>
 
-      {partner && (
-        <Card tint="#FFFAF0" className="mb-3">
-          <div className="text-[12px] font-extrabold mb-2.5" style={{ color: C.ink }}>{partner.name}-н өнөөдөр</div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <div className="text-[10px] font-bold mb-1" style={{ color: C.waterDeep }}>Ус</div>
-              <div className="text-[12.5px] font-extrabold mb-1.5" style={{ color: C.ink }}>{pMl}мл</div>
-              <Bar value={pMl} max={pGoal} color={C.waterDeep} />
-            </div>
-            <div>
-              <div className="text-[10px] font-bold mb-1" style={{ color: C.sageDeep }}>Жагсаалт</div>
-              <div className="text-[12.5px] font-extrabold mb-1.5" style={{ color: C.ink }}>{pDone}/{pItems.length}</div>
-              <Bar value={pDone} max={Math.max(pItems.length, 1)} color={C.sageDeep} />
-            </div>
-            <div>
-              <div className="text-[10px] font-bold mb-1" style={{ color: C.peachDeep }}>Дэлгэц</div>
-              <div className="text-[12.5px] font-extrabold mb-1.5" style={{ color: C.ink }}>
-                {Math.floor(pScreenMin / 60)}ц{pScreenMin % 60}м
+      {(partner || updateAvailable) && (
+        <div className="flex gap-3 mb-3">
+          {partner && (
+            <Card tint="#FFFAF0" className="flex-1" onClick={() => go("partner")}>
+              <img src={partner.avatar || IC_PROFILE} alt="" className="w-12 h-12 rounded-2xl object-cover mb-2"
+                style={{ border: `1.5px solid ${C.line}` }} />
+              <div className="text-[13.5px] font-extrabold mb-1.5" style={{ color: C.ink }}>{partner.name}</div>
+              <div className="text-[11.5px] font-bold" style={{ color: C.peachDeep }}>Явцыг харах →</div>
+            </Card>
+          )}
+          {updateAvailable && (
+            <Card tint="#F5FBF3" className="flex-1" onClick={onApplyUpdate}>
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-2" style={{ background: C.sageDeep }}>
+                <RefreshCw size={20} strokeWidth={2.2} color="#fff" />
               </div>
-              <Bar value={pScreenMin} max={240} color={C.peachDeep} />
-            </div>
-          </div>
-        </Card>
+              <div className="text-[13.5px] font-extrabold mb-1.5" style={{ color: C.ink }}>Шинэ хувилбар</div>
+              <div className="text-[11.5px] font-bold" style={{ color: C.sageDeep }}>Шинэчлэх →</div>
+            </Card>
+          )}
+        </div>
       )}
 
       <HomeCarousel />
@@ -1614,6 +1662,8 @@ export default function App() {
   const [clock, setClock] = useState(ubParts());
   const [justReset, setJustReset] = useState(false);
   const [avatar, setAvatar] = useState(saved.avatar ?? IC_PROFILE);
+  const [avatarThumb, setAvatarThumb] = useState(null);
+  const [peekToast, setPeekToast] = useState(null);
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [screenApps, setScreenApps] = useState(saved.screenApps ?? []);
@@ -1660,14 +1710,20 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
+  /* профайл зургийг жижиг thumbnail болгож, хамтрагчид харуулах бэлэн болгоно */
+  useEffect(() => {
+    compressDataUrl(avatar, 120, 0.6).then(setAvatarThumb).catch(() => setAvatarThumb(avatar));
+  }, [avatar]);
+
   /* өөрийн ус/жагсаалт/дэлгэцийн цаг/GIF-ийн явцыг Firestore-т бичиж, хамтрагч харж чадахуйц болгоно */
   useEffect(() => {
     if (!accountKey) return;
     const gifFrames = frames.map((f) => f.thumb).filter(Boolean);
     setDoc(doc(db, "rooms", CHAT_ROOM, "stats", accountKey), {
       name: profileName, day, ml, goal, log, items, screenApps, appMin, screenHistory, gifFrames,
+      ...(avatarThumb ? { avatar: avatarThumb } : {}),
     }).catch(() => {});
-  }, [accountKey, profileName, day, ml, goal, log, items, screenApps, appMin, screenHistory, frames]);
+  }, [accountKey, profileName, day, ml, goal, log, items, screenApps, appMin, screenHistory, frames, avatarThumb]);
 
   /* хамтрагчийн бүртгэлийг бодит цагт сонсоно */
   useEffect(() => {
@@ -1677,6 +1733,23 @@ export default function App() {
     }, () => {});
     return unsub;
   }, [partnerKey]);
+
+  /* хамтрагч чиний мэдээллийг харлаа гэдгийг мэдэгдэх */
+  useEffect(() => {
+    if (!accountKey) return;
+    const unsub = onSnapshot(doc(db, "rooms", CHAT_ROOM, "peeks", accountKey), (snap) => {
+      const at = snap.data()?.at;
+      if (!at) return;
+      const ms = at.toMillis();
+      const lastSeen = Number(localStorage.getItem("ankomeow-last-peek") || 0);
+      if (ms > lastSeen) {
+        localStorage.setItem("ankomeow-last-peek", String(ms));
+        setPeekToast(ACCOUNTS[partnerKey]?.name || "Хамтрагч");
+        setTimeout(() => setPeekToast(null), 4000);
+      }
+    }, () => {});
+    return unsub;
+  }, [accountKey, partnerKey]);
 
   /* PWA суулгах сануулгыг сонсох (Android/Chrome-д л ажиллана) */
   useEffect(() => {
@@ -1800,6 +1873,14 @@ export default function App() {
           <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#28C840" }} />
         </div>
 
+        {/* Хамтрагч чиний мэдээллийг харлаа гэсэн богино мэдэгдэл */}
+        {peekToast && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 rounded-full px-4 py-2 text-[12px] font-extrabold shadow-lg"
+            style={{ background: C.lilacDeep, color: "#fff" }}>
+            👀 {peekToast} таны мэдээллийг харлаа
+          </div>
+        )}
+
         {/* Splash */}
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 overflow-hidden"
           style={{
@@ -1825,6 +1906,7 @@ export default function App() {
                 {tab === "screen" && <ScreenTimeScreen {...{ screenApps, screenHistory, appMin }} partner={partnerStats} onBack={() => setTab("home")} />}
                 {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} partner={partnerStats} onBack={() => setTab("home")} />}
                 {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, setAvatar, profileName }} gifCount={frames.length} onBack={() => setTab("home")} />}
+                {tab === "partner" && <PartnerScreen partner={partnerStats} accountKey={accountKey} partnerKey={partnerKey} onBack={() => setTab("home")} />}
                 {tab === "chat" && <ChatScreen onBack={() => setTab("home")} profileName={profileName} accountKey={accountKey} partnerKey={partnerKey} />}
               </div>
             </div>
