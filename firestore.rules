@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isCouple() {
+      return request.auth != null &&
+        request.auth.token.email in ['andela@ankomeow.app', 'neko@ankomeow.app'];
+    }
+    function myKey() {
+      return request.auth.token.email.split('@')[0];
+    }
+
+    match /rooms/ankomeow-couple/messages/{messageId} {
+      allow read: if isCouple();
+      allow create: if isCouple() && request.resource.data.sender == myKey();
+      allow update: if isCouple();
+      allow delete: if isCouple() && resource.data.sender == myKey();
+    }
+
+    match /rooms/ankomeow-couple/stats/{key} {
+      allow read: if isCouple();
+      allow write: if isCouple() && key == myKey();
+    }
+
+    match /rooms/ankomeow-couple/reads/{key} {
+      allow read: if isCouple();
+      allow write: if isCouple() && key == myKey();
+    }
+
+    match /rooms/ankomeow-couple/peeks/{key} {
+      allow read: if isCouple() && key == myKey();
+      allow write: if isCouple();
+    }
+
+    match /rooms/ankomeow-couple/profiles/{key} {
+      allow read, write: if isCouple();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
