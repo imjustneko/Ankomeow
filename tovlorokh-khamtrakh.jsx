@@ -855,13 +855,13 @@ function GifScreen({ frames, setFrames, partner, onBack }) {
 
 /* ── Чат ── */
 const REACTIONS = [
-  { key: "poke", label: "Тэмтэрлээ", q: "anime chibi poke" },
-  { key: "kiss", label: "Үнслээ", q: "anime kiss couple chibi" },
-  { key: "punch", label: "Цохилоо", q: "anime chibi punch" },
+  { key: "poke", label: "Тэмтэрлээ", count: 8 },
+  { key: "kiss", label: "Үнслээ", count: 8 },
+  { key: "punch", label: "Цохилоо", count: 6 },
 ];
-const ANIME_HINTS = ["anime", "chibi", "manga", "kawaii", "waifu", "senpai", "otaku", "crunchyroll", "funimation", "iqiyi", "webtoon"];
-const GIPHY_KEY = "uAAteEbDyzEiWuUojG6YfynP6q3Od7Wa";
-const KISS_GIFS = Array.from({ length: 8 }, (_, i) => `./gifs/kiss/kiss-${i + 1}.gif`);
+const REACTION_GIFS = Object.fromEntries(
+  REACTIONS.map((r) => [r.key, Array.from({ length: r.count }, (_, i) => `./gifs/${r.key}/${r.key}-${i + 1}.gif`)])
+);
 const QUICK_REACTIONS = ["❤️", "😂", "👍", "😮", "😢"];
 
 const chatTime = (ts) => {
@@ -948,27 +948,11 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey }) {
     setReactingTo(null);
   };
 
-  const sendReaction = async (r) => {
+  const sendReaction = (r) => {
     setShowReact(false);
-    if (r.key === "kiss") {
-      const pick = KISS_GIFS[Math.floor(Math.random() * KISS_GIFS.length)];
-      send({ type: "reaction", key: r.key, label: r.label, gifUrl: pick });
-      return;
-    }
-    try {
-      const res = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(r.q)}&limit=25&rating=g`);
-      const data = await res.json();
-      const pool = (data?.data ?? []).filter((g) => g?.images?.fixed_height?.url);
-      const isAnime = (g) => {
-        const hay = `${g.title || ""} ${g.slug || ""} ${g.username || ""}`.toLowerCase();
-        return ANIME_HINTS.some((h) => hay.includes(h));
-      };
-      const animePool = pool.filter(isAnime);
-      const pick = animePool.length ? animePool[Math.floor(Math.random() * animePool.length)] : null;
-      send({ type: "reaction", key: r.key, label: r.label, gifUrl: pick?.images?.fixed_height?.url ?? null });
-    } catch {
-      send({ type: "reaction", key: r.key, label: r.label });
-    }
+    const pool = REACTION_GIFS[r.key] || [];
+    const pick = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+    send({ type: "reaction", key: r.key, label: r.label, gifUrl: pick });
   };
 
   const sendLocation = () => {
