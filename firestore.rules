@@ -31,6 +31,12 @@ service cloud.firestore {
       allow write: if isCouple();
     }
 
+    /* Push token — эзэн нь л өөрийнхөө төхөөрөмжийг бүртгэнэ.
+       Сервер тал (firebase-admin) энэ дүрмийг тойрдог тул унших эрх өгөх шаардлагагүй. */
+    match /rooms/ankomeow-couple/tokens/{key} {
+      allow read, write: if isCouple() && key == myKey();
+    }
+
     match /rooms/ankomeow-couple/profiles/{key} {
       allow read, write: if isCouple();
     }
