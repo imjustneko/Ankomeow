@@ -2,8 +2,8 @@
    — precache жагсаалт болон хувилбарыг build үед vite.config.js сольж бичдэг.
    — dev горимд орлуулалт хийгддэггүй тул placeholder нь энгийн текст хэвээр үлдэнэ. */
 
-const PRECACHE_RAW = ["./","./index.html","./manifest.webmanifest","./icon-192.png","./icon-512.png","./icon-maskable-512.png","./assets/gif.worker-CjkyQP34.js","./assets/index-DqmUIFmR.css","./assets/index-jCwu_srO.js"];
-const BUILD_VERSION = "80308ef9";
+const PRECACHE_RAW = ["./","./index.html","./manifest.webmanifest","./icon-192.png","./icon-512.png","./icon-maskable-512.png","./assets/gif.worker-CjkyQP34.js","./assets/index-BQ8w31vh.js","./assets/index-DqmUIFmR.css"];
+const BUILD_VERSION = "d369d901";
 
 const PRECACHE = Array.isArray(PRECACHE_RAW)
   ? PRECACHE_RAW
