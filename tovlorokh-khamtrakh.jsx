@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { ChevronLeft, Check, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle } from "lucide-react";
+import { ChevronLeft, Check, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle, Bell, BellOff } from "lucide-react";
 import GIF from "gif.js";
 import gifWorkerUrl from "gif.js/dist/gif.worker.js?url";
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, addDoc, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp } from "firebase/firestore";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, arrayUnion } from "firebase/firestore";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
+import { pushSupported, pushPermission, requestPushToken, notifyPartner, NOTIFY_ENDPOINT } from "./src/push.js";
 
 /* ── Firebase (хос chat) ── */
 const firebaseConfig = {
@@ -17,7 +18,16 @@ const firebaseConfig = {
   measurementId: "G-ZQ7BB8B1ER",
 };
 const fbApp = initializeApp(firebaseConfig);
-const db = getFirestore(fbApp);
+/* Офлайн кэш: интернэтгүй үед уншина, бичсэн зүйл дараалалд орж дараа нь илгээгдэнэ.
+   Хэрэв хөтөч дэмжихгүй бол (Private mode г.м.) энгийн санах ойн кэш рүү шилжинэ. */
+let db;
+try {
+  db = initializeFirestore(fbApp, {
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+  });
+} catch {
+  db = initializeFirestore(fbApp, {});
+}
 const auth = getAuth(fbApp);
 const CHAT_ROOM = "ankomeow-couple";
 
@@ -294,6 +304,54 @@ function MineToggle({ mine, setMine, partnerName }) {
 }
 
 /* ── Апп суулгах ── */
+/* Мэдэгдлийн зөвшөөрөл асуух баннер.
+   state: "granted" | "default" | "denied" | "unsupported" | "needs-install" | "unconfigured" */
+function NotifyBanner({ state, busy, error, onEnable, onDismiss }) {
+  if (state === "granted" || state === "unconfigured") return null;
+
+  const copy = {
+    default: { title: "Мэдэгдэл асаах", sub: "Апп хаалттай байхад ч хамтрагчийн зурвас ирнэ" },
+    denied: { title: "Мэдэгдэл хаалттай байна", sub: "Хөтчийн тохиргооноос Ankomeow-д зөвшөөрөл өгнө үү" },
+    "needs-install": { title: "Эхлээд утсандаа суулга", sub: "iPhone дээр мэдэгдэл зөвхөн Home Screen-д суулгасны дараа ажиллана" },
+    unsupported: { title: "Энэ хөтөч мэдэгдэл дэмжихгүй", sub: "Chrome эсвэл Safari-гийн шинэ хувилбар ашиглана уу" },
+  }[state];
+
+  if (!copy) return null;
+
+  return (
+    <div className="rounded-[22px] p-4 mb-4 relative" style={{
+      background: `linear-gradient(158deg, #FDF6F0 0%, ${C.card} 130%)`,
+      border: `1.5px solid ${C.line}`, boxShadow: "0 2px 0 rgba(92,74,58,.05), 0 1px 0 rgba(255,255,255,.8) inset",
+    }}>
+      <button onClick={onDismiss} className="absolute top-3 right-3 w-6 h-6 rounded-full flex items-center justify-center"
+        style={{ color: C.inkSoft }} aria-label="Хаах">
+        <X size={13} strokeWidth={2.4} />
+      </button>
+      <div className="flex items-center gap-3 pr-6">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: C.lilacDeep }}>
+          {state === "denied" ? <BellOff size={18} strokeWidth={2.2} color="#fff" /> : <Bell size={18} strokeWidth={2.2} color="#fff" />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>{copy.title}</div>
+          <div className="text-[11.5px] font-medium" style={{ color: C.inkSoft }}>{copy.sub}</div>
+        </div>
+      </div>
+
+      {state === "default" && (
+        <button onClick={onEnable} disabled={busy}
+          className="w-full mt-3 rounded-full py-2.5 text-[12.5px] font-extrabold flex items-center justify-center gap-2 active:scale-[0.97] disabled:opacity-50"
+          style={{ background: C.lilacDeep, color: "#fff", transition: "transform 150ms ease" }}>
+          <Bell size={15} strokeWidth={2.4} /> {busy ? "Асааж байна…" : "Мэдэгдэл асаах"}
+        </button>
+      )}
+
+      {error && (
+        <p className="text-[11.5px] font-semibold mt-2.5 leading-relaxed" style={{ color: C.inkSoft }}>{error}</p>
+      )}
+    </div>
+  );
+}
+
 function InstallBanner({ canInstall, isIOS, onInstall, onDismiss }) {
   const [showIOSHelp, setShowIOSHelp] = useState(false);
 
@@ -938,6 +996,17 @@ const compressDataUrl = (dataUrl, maxDim, quality) => new Promise((resolve, reje
   img.src = dataUrl;
 });
 
+/* Мэдэгдэлд харагдах товч тайлбар (зураг/байршлыг бүтнээр нь илгээхгүй) */
+function messagePreview(payload) {
+  switch (payload.type) {
+    case "text": return payload.text?.slice(0, 120) || "Зурвас илгээлээ";
+    case "reaction": return payload.label || "Реакц илгээлээ";
+    case "image": return "📷 Зураг илгээлээ";
+    case "location": return "📍 Байршлаа илгээлээ";
+    default: return "Шинэ зурвас";
+  }
+}
+
 function ChatScreen({ onBack, profileName, accountKey, partnerKey }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
@@ -975,6 +1044,14 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey }) {
     addDoc(collection(db, "rooms", CHAT_ROOM, "messages"), {
       sender: accountKey, senderName: profileName, createdAt: serverTimestamp(), ...payload,
     }).catch(() => {});
+
+    notifyPartner(auth, {
+      to: partnerKey,
+      title: profileName,
+      body: messagePreview(payload),
+      tag: "chat",
+      tab: "chat",
+    });
   };
 
   const onSend = () => {
@@ -1457,6 +1534,13 @@ function PartnerScreen({ partner, accountKey, partnerKey, onBack }) {
   useEffect(() => {
     if (!partnerKey || !accountKey) return;
     setDoc(doc(db, "rooms", CHAT_ROOM, "peeks", partnerKey), { from: accountKey, at: serverTimestamp() }).catch(() => {});
+    notifyPartner(auth, {
+      to: partnerKey,
+      title: ACCOUNTS[accountKey]?.name || "Хамтрагч",
+      body: "Чиний өдрийн явцыг харлаа 👀",
+      tag: "peek",
+      tab: "home",
+    });
   }, [partnerKey, accountKey]);
 
   return (
@@ -1574,7 +1658,7 @@ function LoginScreen() {
 }
 
 /* ── Нүүр ── */
-function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar, profileName, screenApps, appMin, partner, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate }) {
+function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar, profileName, screenApps, appMin, partner, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
   const now = new Date();
   const greet = (clock.h < 11 ? "Өглөөний мэнд" : clock.h < 18 ? "Өдрийн мэнд" : "Оройн мэнд") + (profileName ? `, ${profileName}` : "");
   const done = items.filter((i) => i.done).length;
@@ -1605,6 +1689,10 @@ function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar, p
 
       {!isStandalone && !installDismissed && (
         <InstallBanner canInstall={canInstall} isIOS={isIOS} onInstall={onInstall} onDismiss={onDismissInstall} />
+      )}
+
+      {!pushDismissed && (
+        <NotifyBanner state={pushState} busy={pushBusy} error={pushError} onEnable={onEnablePush} onDismiss={onDismissPush} />
       )}
 
       {justReset && (
@@ -1743,6 +1831,11 @@ export default function App() {
     []
   );
 
+  const [pushState, setPushState] = useState("default");
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushError, setPushError] = useState("");
+  const [pushDismissed, setPushDismissed] = useState(() => localStorage.getItem("ankomeow-push-dismissed") === "1");
+
   const goal = useMemo(() => Math.round((weight * 33) / 50) * 50, [weight]);
   const accountKey = user ? accountKeyFromEmail(user.email) : null;
   const profileName = accountKey ? ACCOUNTS[accountKey].name : "";
@@ -1761,12 +1854,56 @@ export default function App() {
     localStorage.setItem(STORE_KEY, JSON.stringify({ ml, log, weight, items, day, avatar, screenApps, screenHistory, appSeconds }));
   }, [ml, log, weight, items, day, avatar, screenApps, screenHistory, appSeconds]);
 
-  /* Ankomeow дотор өнгөрүүлсэн бодит цагийг хэмжинэ (дэлгэц идэвхтэй/дэвсгэрт биш үед л нэмэгдэнэ) */
+  /* Ankomeow дотор өнгөрүүлсэн бодит цагийг хэмжинэ.
+     setInterval нь дэвсгэрт удааширдаг тул тоолуур биш, цагийн зөрүүгээр бодно —
+     ингэснээр алдаа хуримтлагдахгүй, апп гэнэт хаагдсан ч секунд алдагдахгүй. */
   useEffect(() => {
-    const id = setInterval(() => {
-      if (document.visibilityState === "visible") setAppSeconds((s) => s + 1);
-    }, 1000);
-    return () => clearInterval(id);
+    let visibleSince = document.visibilityState === "visible" ? Date.now() : null;
+    let carryMs = 0;
+
+    const flush = () => {
+      if (visibleSince === null) return;
+      const now = Date.now();
+      carryMs += now - visibleSince;
+      visibleSince = now;
+      const whole = Math.floor(carryMs / 1000);
+      if (whole <= 0) return;
+      carryMs -= whole * 1000;
+      const next = appSecondsRef.current + whole;
+      appSecondsRef.current = next;
+      setAppSeconds(next);
+    };
+
+    /* апп хаагдах агшинд React-ийн төлөв хадгалагдаж амжихгүй байж болзошгүй тул шууд бичнэ */
+    const persistNow = () => {
+      try {
+        const cur = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+        localStorage.setItem(STORE_KEY, JSON.stringify({ ...cur, appSeconds: appSecondsRef.current }));
+      } catch {}
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        visibleSince = Date.now();
+      } else {
+        flush();
+        visibleSince = null;
+        persistNow();
+      }
+    };
+
+    const onHide = () => { flush(); persistNow(); };
+
+    const id = setInterval(flush, 1000);
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onHide);
+
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onHide);
+      flush();
+    };
   }, []);
 
   /* профайл зургийг жижиг thumbnail болгож, хамтрагчид харуулах бэлэн болгоно */
@@ -1809,6 +1946,69 @@ export default function App() {
     }, () => {});
     return unsub;
   }, [accountKey, partnerKey]);
+
+  /* мэдэгдлийн одоогийн төлөвийг тодорхойлно */
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!NOTIFY_ENDPOINT) { if (alive) setPushState("unconfigured"); return; }
+      if (isIOS && !isStandalone) { if (alive) setPushState("needs-install"); return; }
+      const ok = await pushSupported();
+      if (!alive) return;
+      setPushState(ok ? pushPermission() : "unsupported");
+    })();
+    return () => { alive = false; };
+  }, [isIOS, isStandalone]);
+
+  /* зөвшөөрөл байгаа үед FCM token-ыг Firestore-т шинэчилж байна
+     (token үе үе солигддог тул апп нээх бүрд дахин бичнэ) */
+  useEffect(() => {
+    if (pushState !== "granted" || !accountKey) return;
+    requestPushToken(fbApp)
+      .then((token) => {
+        if (!token) return;
+        return setDoc(
+          doc(db, "rooms", CHAT_ROOM, "tokens", accountKey),
+          { tokens: arrayUnion(token), updatedAt: serverTimestamp() },
+          { merge: true }
+        );
+      })
+      .catch(() => {});
+  }, [pushState, accountKey]);
+
+  const enablePush = async () => {
+    setPushBusy(true);
+    setPushError("");
+    try {
+      const token = await requestPushToken(fbApp);
+      if (token) setPushState("granted");
+      else { setPushState(pushPermission()); setPushError("Зөвшөөрөл өгөгдсөнгүй."); }
+    } catch (err) {
+      setPushError(err?.message || "Мэдэгдэл асаахад алдаа гарлаа.");
+      setPushState(pushPermission());
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const dismissPush = () => {
+    localStorage.setItem("ankomeow-push-dismissed", "1");
+    setPushDismissed(true);
+  };
+
+  /* мэдэгдэл дээр дарахад холбогдох таб руу шилжинэ */
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    const onMsg = (e) => {
+      const { type, tab: target, payload } = e.data || {};
+      if (type === "NOTIFICATION_CLICK" && target) setTab(target);
+      if (type === "PUSH_FOREGROUND" && payload?.tab === "chat" && payload?.tag) {
+        /* апп нээлттэй үед аль хэдийн бодит цагт шинэчлэгддэг тул нэмэлт үйлдэл хэрэггүй */
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", onMsg);
+    return () => navigator.serviceWorker.removeEventListener("message", onMsg);
+  }, []);
 
   /* PWA суулгах сануулгыг сонсох (Android/Chrome-д л ажиллана) */
   useEffect(() => {
@@ -1959,7 +2159,7 @@ export default function App() {
           <>
             <div className={`flex-1 px-5 pt-7 min-h-0 flex flex-col ${tab === "chat" ? "pb-3" : "pb-4 overflow-y-auto overscroll-contain"}`}>
               <div key={tab} className={`scr ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
-                {tab === "home" && <HomeScreen go={setTab} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable }} partner={partnerStats} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} gifCount={frames.length} />}
+                {tab === "home" && <HomeScreen go={setTab} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} />}
                 {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} partner={partnerStats} onBack={() => setTab("home")} />}
                 {tab === "list" && <ListScreen items={items} setItems={setItems} partner={partnerStats} onBack={() => setTab("home")} />}
                 {tab === "screen" && <ScreenTimeScreen {...{ screenApps, screenHistory, appMin }} partner={partnerStats} onBack={() => setTab("home")} />}
