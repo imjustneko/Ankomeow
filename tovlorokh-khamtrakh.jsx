@@ -1658,7 +1658,7 @@ function LoginScreen() {
 }
 
 /* ── Нүүр ── */
-function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar, profileName, screenApps, appMin, partner, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
+function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar, profileName, screenApps, appMin, partner, partnerName, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
   const now = new Date();
   const greet = (clock.h < 11 ? "Өглөөний мэнд" : clock.h < 18 ? "Өдрийн мэнд" : "Оройн мэнд") + (profileName ? `, ${profileName}` : "");
   const done = items.filter((i) => i.done).length;
@@ -1741,16 +1741,26 @@ function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar, p
         </Card>
       </div>
 
-      {(partner || updateAvailable) && (
+      {(partnerName || updateAvailable) && (
         <div className="flex gap-3 mb-3">
-          {partner && (
+          {partner ? (
             <Card tint="#FFFAF0" className="flex-1" onClick={() => go("partner")}>
               <img src={partner.avatar || IC_PROFILE} alt="" className="w-12 h-12 rounded-2xl object-cover mb-2"
                 style={{ border: `1.5px solid ${C.line}` }} />
               <div className="text-[13.5px] font-extrabold mb-1.5" style={{ color: C.ink }}>{partner.name}</div>
               <div className="text-[11.5px] font-bold" style={{ color: C.peachDeep }}>Явцыг харах →</div>
             </Card>
-          )}
+          ) : partnerName ? (
+            /* Хамтрагч хараахан нэвтрээгүй бол чимээгүй өнгөрөхгүй — шалтгааныг хэлнэ */
+            <Card tint="#FFFAF0" className="flex-1">
+              <img src={IC_PROFILE} alt="" className="w-12 h-12 rounded-2xl object-cover mb-2"
+                style={{ border: `1.5px solid ${C.line}`, opacity: 0.45 }} />
+              <div className="text-[13.5px] font-extrabold mb-1.5" style={{ color: C.ink }}>{partnerName}</div>
+              <div className="text-[11.5px] font-bold leading-snug" style={{ color: C.inkSoft }}>
+                Хараахан нэвтрээгүй байна
+              </div>
+            </Card>
+          ) : null}
           {updateAvailable && (
             <Card tint="#F5FBF3" className="flex-1" onClick={onApplyUpdate}>
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-2" style={{ background: C.sageDeep }}>
@@ -1824,7 +1834,8 @@ export default function App() {
   const [partnerStats, setPartnerStats] = useState(null);
   const [canInstall, setCanInstall] = useState(!!window.deferredInstallPrompt);
   const [installDismissed, setInstallDismissed] = useState(() => localStorage.getItem("ankomeow-install-dismissed") === "1");
-  const [updateAvailable, setUpdateAvailable] = useState(false);
+  /* main.jsx нь React mount хийхээс өмнө төлөвийг тогтоосон байж болзошгүй */
+  const [updateAvailable, setUpdateAvailable] = useState(() => !!window.ankomeowUpdateReady);
   const isIOS = useMemo(() => /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream, []);
   const isStandalone = useMemo(
     () => window.matchMedia?.("(display-mode: standalone)").matches || window.navigator.standalone === true,
@@ -2017,9 +2028,9 @@ export default function App() {
     return () => window.removeEventListener("pwa-install-available", onAvail);
   }, []);
 
-  /* шинэ хувилбар бэлэн болсныг мэдэгдэх */
+  /* шинэ хувилбар бэлэн эсэхийг сонсоно — байхгүй болоход товч мөн алга болно */
   useEffect(() => {
-    const onUpdate = () => setUpdateAvailable(true);
+    const onUpdate = (e) => setUpdateAvailable(e.detail !== false);
     window.addEventListener("ankomeow-update-available", onUpdate);
     return () => window.removeEventListener("ankomeow-update-available", onUpdate);
   }, []);
@@ -2159,7 +2170,7 @@ export default function App() {
           <>
             <div className={`flex-1 px-5 pt-7 min-h-0 flex flex-col ${tab === "chat" ? "pb-3" : "pb-4 overflow-y-auto overscroll-contain"}`}>
               <div key={tab} className={`scr ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
-                {tab === "home" && <HomeScreen go={setTab} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} />}
+                {tab === "home" && <HomeScreen go={setTab} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} />}
                 {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} partner={partnerStats} onBack={() => setTab("home")} />}
                 {tab === "list" && <ListScreen items={items} setItems={setItems} partner={partnerStats} onBack={() => setTab("home")} />}
                 {tab === "screen" && <ScreenTimeScreen {...{ screenApps, screenHistory, appMin }} partner={partnerStats} onBack={() => setTab("home")} />}

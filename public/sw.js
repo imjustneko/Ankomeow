@@ -12,13 +12,20 @@ const PRECACHE = Array.isArray(PRECACHE_RAW)
 const CACHE = "ankomeow-" + (BUILD_VERSION.startsWith("__") ? "dev" : BUILD_VERSION);
 
 /* ── суулгах: бүрхүүл болон бүх hash-тай asset-ыг урьдчилан хадгална ── */
+/* Нэг файл ч унавал install бүхэлдээ унах ёсгүй.
+   Safari-д Request-ийн cache сонголт синхроноор алдаа өгч болзошгүй тул тусад нь барина. */
+const cacheOne = (c, url) => {
+  let req;
+  try {
+    req = new Request(url, { cache: "reload" });
+  } catch {
+    req = url;
+  }
+  return c.add(req).catch(() => {});
+};
+
 self.addEventListener("install", (e) => {
-  e.waitUntil(
-    caches.open(CACHE).then((c) =>
-      /* нэг файл унавал бүх addAll унахгүйн тулд тус тусад нь хийнэ */
-      Promise.all(PRECACHE.map((u) => c.add(new Request(u, { cache: "reload" })).catch(() => {})))
-    )
-  );
+  e.waitUntil(caches.open(CACHE).then((c) => Promise.all(PRECACHE.map((u) => cacheOne(c, u)))));
 });
 
 self.addEventListener("message", (e) => {
