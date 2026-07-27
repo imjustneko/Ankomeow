@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "../tovlorokh-khamtrakh.jsx";
+import "./index.css";
 
 window.addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();
