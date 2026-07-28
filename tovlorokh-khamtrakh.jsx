@@ -1817,10 +1817,18 @@ export default function App() {
   const saved = useMemo(loadSaved, []);
   const [booted, setBooted] = useState(false);
   const [tab, setTab] = useState("home");
+  const [navDir, setNavDir] = useState("in");
+
+  /* Таб солихдоо шилжилтийн чиглэлийг мөн тогтооно:
+     нүүр рүү буцах нь "back", бусад нь "in". setTab-ын оронд үүнийг ашиглана. */
+  const go = (next) => {
+    setNavDir(next === "home" ? "back" : "in");
+    setTab(next);
+  };
 
   useKeyboardInset();
   const screenRef = useRef(null);
-  useSwipeBack(screenRef, () => setTab("home"), tab !== "home");
+  useSwipeBack(screenRef, () => go("home"), tab !== "home");
   const [ml, setMl] = useState(saved.ml ?? 750);
   const [log, setLog] = useState(saved.log ?? [{ v: 500, t: "08:20" }, { v: 250, t: "11:05" }]);
   const [weight, setWeight] = useState(saved.weight ?? 60);
@@ -2027,7 +2035,7 @@ export default function App() {
     if (!("serviceWorker" in navigator)) return;
     const onMsg = (e) => {
       const { type, tab: target, payload } = e.data || {};
-      if (type === "NOTIFICATION_CLICK" && target) setTab(target);
+      if (type === "NOTIFICATION_CLICK" && target) go(target);
       if (type === "PUSH_FOREGROUND" && payload?.tab === "chat" && payload?.tag) {
         /* апп нээлттэй үед аль хэдийн бодит цагт шинэчлэгддэг тул нэмэлт үйлдэл хэрэггүй */
       }
@@ -2111,6 +2119,8 @@ export default function App() {
         @keyframes puddle { 0%{transform:scaleX(0);opacity:0} 55%{opacity:.5} 100%{transform:scaleX(1);opacity:.28} }
         @keyframes wobble { 0%,100%{transform:rotate(0)} 25%{transform:rotate(-1.6deg)} 75%{transform:rotate(1.6deg)} }
         @keyframes fadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
+        @keyframes slideIn { from{opacity:0;transform:translateX(26px)} to{opacity:1;transform:none} }
+        @keyframes slideBack { from{opacity:0;transform:translateX(-26px)} to{opacity:1;transform:none} }
         @keyframes leakL { 0%{transform:translate(0,0) scaleY(.6);opacity:0} 10%{opacity:.9} 70%{transform:translate(-14px,255px) scaleY(1.6);opacity:.7} 100%{transform:translate(-17px,278px) scaleY(1.8);opacity:0} }
         @keyframes leakR { 0%{transform:translate(0,0) scaleY(.6);opacity:0} 10%{opacity:.9} 70%{transform:translate(14px,255px) scaleY(1.6);opacity:.7} 100%{transform:translate(17px,278px) scaleY(1.8);opacity:0} }
         @keyframes puddleBreathe { 0%,100%{transform:scale(1);opacity:.55} 50%{transform:scale(1.06);opacity:.7} }
@@ -2122,8 +2132,9 @@ export default function App() {
         .leakL{animation:leakL 1.9s cubic-bezier(.4,0,.7,.4) infinite}
         .leakR{animation:leakR 1.9s cubic-bezier(.4,0,.7,.4) infinite 0.9s}
         .puddleBreathe{animation:puddleBreathe 2.4s ease-in-out infinite}
-        .scr{animation:fadeUp 320ms ease-out}
-        @media (prefers-reduced-motion: reduce){ .wv-a,.wv-b,.bub,.dropL,.dropR,.puddle,.leakL,.leakR,.puddleBreathe,.scr{animation:none} }
+        .scr-in{animation:slideIn 280ms cubic-bezier(.32,.72,0,1)}
+        .scr-back{animation:slideBack 280ms cubic-bezier(.32,.72,0,1)}
+        @media (prefers-reduced-motion: reduce){ .wv-a,.wv-b,.bub,.dropL,.dropR,.puddle,.leakL,.leakR,.puddleBreathe,.scr-in,.scr-back{animation:none} }
         input[type=range]{height:6px;border-radius:99px;background:${C.cardIn};-webkit-appearance:none;outline:none}
         input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:${C.waterDeep};border:3px solid #fff;box-shadow:0 1px 4px rgba(92,74,58,.25);cursor:pointer}
         ::-webkit-scrollbar{height:5px;width:5px} ::-webkit-scrollbar-thumb{background:${C.line2};border-radius:99px}
@@ -2197,15 +2208,15 @@ export default function App() {
           <>
             <div ref={screenRef}
               className={`flex-1 px-5 pt-7 min-h-0 flex flex-col ${tab === "chat" ? "pb-3" : "pb-4 overflow-y-auto overscroll-contain"}`}>
-              <div key={tab} className={`scr ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
-                {tab === "home" && <HomeScreen go={setTab} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} />}
-                {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} partner={partnerStats} onBack={() => setTab("home")} />}
-                {tab === "list" && <ListScreen items={items} setItems={setItems} partner={partnerStats} onBack={() => setTab("home")} />}
-                {tab === "screen" && <ScreenTimeScreen {...{ screenApps, screenHistory, appMin }} partner={partnerStats} onBack={() => setTab("home")} />}
-                {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} partner={partnerStats} onBack={() => setTab("home")} />}
-                {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, setAvatar, profileName }} gifCount={frames.length} onBack={() => setTab("home")} />}
-                {tab === "partner" && <PartnerScreen partner={partnerStats} accountKey={accountKey} partnerKey={partnerKey} onBack={() => setTab("home")} />}
-                {tab === "chat" && <ChatScreen onBack={() => setTab("home")} profileName={profileName} accountKey={accountKey} partnerKey={partnerKey} />}
+              <div key={tab} className={`${navDir === "back" ? "scr-back" : "scr-in"} ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
+                {tab === "home" && <HomeScreen go={go} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} />}
+                {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} partner={partnerStats} onBack={() => go("home")} />}
+                {tab === "list" && <ListScreen items={items} setItems={setItems} partner={partnerStats} onBack={() => go("home")} />}
+                {tab === "screen" && <ScreenTimeScreen {...{ screenApps, screenHistory, appMin }} partner={partnerStats} onBack={() => go("home")} />}
+                {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} partner={partnerStats} onBack={() => go("home")} />}
+                {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, setAvatar, profileName }} gifCount={frames.length} onBack={() => go("home")} />}
+                {tab === "partner" && <PartnerScreen partner={partnerStats} accountKey={accountKey} partnerKey={partnerKey} onBack={() => go("home")} />}
+                {tab === "chat" && <ChatScreen onBack={() => go("home")} profileName={profileName} accountKey={accountKey} partnerKey={partnerKey} />}
               </div>
             </div>
 
@@ -2215,7 +2226,7 @@ export default function App() {
                 {nav.map(({ id, icon, label, c, c2 }) => {
                   const on = tab === id;
                   return (
-                    <button key={id} onClick={() => setTab(id)}
+                    <button key={id} onClick={() => go(id)}
                       className="flex flex-col items-center justify-center gap-1 px-1.5 py-1.5 rounded-2xl min-h-[44px]">
                       <span className="w-10 h-10 rounded-2xl flex items-center justify-center overflow-hidden"
                         style={{
