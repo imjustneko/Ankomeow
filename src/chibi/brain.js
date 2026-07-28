@@ -39,6 +39,7 @@ export function createBrain({ width, rise = 0, spriteWidth, rand = Math.random }
   let y = 0;
   let targetY = 0;
   let facing = 1;
+  let dir = "right"; /* хамгийн сүүлд хөдөлсөн чиглэл: left|right|up|down */
   let stateStart = 0;
   let stateDur = 0;
   let now = 0;
@@ -86,7 +87,7 @@ export function createBrain({ width, rise = 0, spriteWidth, rand = Math.random }
   startWalk(0);
 
   return {
-    snapshot: () => ({ state, x, y, facing, elapsed: now - stateStart }),
+    snapshot: () => ({ state, x, y, facing, dir, elapsed: now - stateStart }),
 
     tick(at) {
       const dt = Math.max(0, at - now);
@@ -96,11 +97,13 @@ export function createBrain({ width, rise = 0, spriteWidth, rand = Math.random }
         x += (facing * SPEED * dt) / 1000;
         if (x <= 0) { x = 0; facing = 1; }
         if (x >= maxX()) { x = maxX(); facing = -1; }
+        dir = facing === 1 ? "right" : "left";
       }
 
       if (state === "climb") {
         const step = (CLIMB_SPEED * dt) / 1000;
         const gap = targetY - y;
+        dir = gap >= 0 ? "up" : "down";
         if (Math.abs(gap) <= step) {
           y = targetY;
           clampY();

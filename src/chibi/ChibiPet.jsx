@@ -1,6 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createBrain } from "./brain.js";
-import { SPRITE_URL, SPRITE_WIDTH, SPRITE_HEIGHT, SHEET_FACING, WALK_FRAME_MS, cellPosition, frameFor } from "./sprites.js";
+import {
+  SPRITE_URL, SPRITE_WIDTH, SPRITE_HEIGHT, SHEET_FACING, WALK_SHEET, WALK_ROW,
+  cellPosition, gridPosition, frameFor, walkFrame,
+} from "./sprites.js";
 
 /* Sprite зураг ачаалагдаагүй үед харагдах энгийн орлуулагч —
    хоосон дөрвөлжин гарахаас сэргийлнэ. */
@@ -52,7 +55,8 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
   const heartsRef = useRef(null);
   const brainRef = useRef(null);
   const rafRef = useRef(0);
-  const [cell, setCell] = useState(0);
+  const boxWRef = useRef(SPRITE_WIDTH);
+  const walkSheetRef = useRef(null);
   const [state, setState] = useState("walk");
   const [hearts, setHearts] = useState(0); /* зүрхний анимацийг дахин эхлүүлэх түлхүүр */
   const [broken, setBroken] = useState(false);
@@ -108,21 +112,23 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
       if (brain) {
         brain.tick(t);
         const s = brain.snapshot();
+        const walkSheet = walkSheetRef.current;
         if (spriteRef.current) {
-          /* Шилжилт ба толин тусгалыг ЗААВАЛ нэг transform мөрөнд бичнэ.
-             Тусдаа `scale` шинж чанар transform-ын ДАРАА нэмэгддэг тул
-             зүүн тийш харсан chibi-гийн x сөрөг болж дэлгэцнээс гардаг. */
-          /* Алхах үед бага зэрэг доош-дээш найгана — амьд харагдана */
-          const bob = s.state === "walk" ? Math.sin((s.elapsed / WALK_FRAME_MS) * Math.PI) * 1.5 : 0;
+          /* Алхааны хуудсанд зүүн/баруун тусад нь зурагдсан тул толин тусгал
+             хэрэггүй; позын хуудас зөвхөн нэг зүг харсан тул эргүүлнэ. */
+          const flip = walkSheet ? 1 : SHEET_FACING * s.facing;
+          /* Хуудас солигдоход өргөн өөрчлөгддөг — голыг нь байрандаа барина */
+          const off = (boxWRef.current - SPRITE_WIDTH) / 2;
           spriteRef.current.style.transform =
-            `translate3d(${s.x}px, ${-s.y - bob}px, 0) scaleX(${SHEET_FACING * s.facing})`;
+            `translate3d(${s.x - off}px, ${-s.y}px, 0) scaleX(${flip})`;
+          spriteRef.current.style.backgroundPosition = walkSheet
+            ? gridPosition(walkFrame(s.elapsed, walkSheet), WALK_ROW[s.dir] ?? WALK_ROW.down,
+                           walkSheet.cols, walkSheet.rows)
+            : cellPosition(frameFor(s.state, s.elapsed));
         }
         if (heartsRef.current) {
-          /* Зүрхэнд scaleX хийхгүй — emoji толин тусгал болно */
           heartsRef.current.style.transform = `translate3d(${s.x + SPRITE_WIDTH / 2}px, ${-s.y}px, 0)`;
         }
-        const nextCell = frameFor(s.state, s.elapsed);
-        setCell((c) => (c === nextCell ? c : nextCell));
         setState((st) => (st === s.state ? st : s.state));
       }
       rafRef.current = requestAnimationFrame(loop);
@@ -182,19 +188,36 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
 
   if (!visible) return null;
 
-  const url = broken ? PLACEHOLDER : SPRITE_URL[character];
   /* Зүрхний контейнерын анхны байрлал — chibi-гийн голоос эхэлнэ */
   const heartsSnap = brainRef.current?.snapshot();
   const heartsX = (heartsSnap?.x ?? 0) + SPRITE_WIDTH / 2;
   const heartsY = -(heartsSnap?.y ?? 0);
+
+  /* Алхаж/өгсөж байвал 4 чиглэлийн бүтэн циклтэй хуудсыг, бусад үед позын
+     хуудсыг ашиглана. Зураг ачаалагдаагүй бол орлуулагч. */
+  const walking = state === "walk" || state === "climb";
+  const walkSheet = !broken && walking ? WALK_SHEET[character] : null;
+  walkSheetRef.current = walkSheet;
+
+  const boxW = walkSheet
+    ? Math.round((SPRITE_HEIGHT * walkSheet.cellW) / walkSheet.cellH)
+    : SPRITE_WIDTH;
+  boxWRef.current = boxW;
+
   const sheet = broken
-    ? { backgroundImage: `url(${url})`, backgroundSize: "100% 100%", backgroundPosition: "0% 0%" }
-    : { backgroundImage: `url(${url})`, backgroundSize: "300% 300%", backgroundPosition: cellPosition(cell) };
+    ? { backgroundImage: `url(${PLACEHOLDER})`, backgroundSize: "100% 100%", backgroundPosition: "0% 0%" }
+    : walkSheet
+      ? {
+          backgroundImage: `url(${walkSheet.url})`,
+          backgroundSize: `${walkSheet.cols * 100}% ${walkSheet.rows * 100}%`,
+        }
+      : { backgroundImage: `url(${SPRITE_URL[character]})`, backgroundSize: "300% 300%" };
 
   return (
     <div ref={layerRef} className="absolute inset-0 z-[25] pointer-events-none overflow-hidden">
       {/* зураг ачаалагдахгүй бол орлуулагч руу шилжинэ */}
       <img src={SPRITE_URL[character]} alt="" className="hidden" onError={() => setBroken(true)} />
+      {WALK_SHEET[character] && <img src={WALK_SHEET[character].url} alt="" className="hidden" />}
 
       <div
         ref={spriteRef}
@@ -204,15 +227,21 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
         onPointerCancel={onPointerCancel}
         className="absolute pointer-events-auto touch-none select-none"
         style={{
-          width: SPRITE_WIDTH,
+          width: boxW,
           height: SPRITE_HEIGHT,
           bottom: "calc(var(--chibi-baseline, 84px))",
           left: 0,
           transform: "translate3d(0,0,0)",
           backgroundRepeat: "no-repeat",
+          /* iOS: урт дарахад зураг хадгалах цэс гарахыг болиулна */
+          WebkitTouchCallout: "none",
+          WebkitUserSelect: "none",
+          WebkitTapHighlightColor: "transparent",
           ...sheet,
         }}
       >
+        {/* Гар утсан дээр хуруугаар онох талбайг арай томсгоно */}
+        <span className="absolute -inset-2" aria-hidden="true" />
         {state === "sleep" && (
           <span className="absolute -top-2 right-0 text-[11px] font-extrabold chibi-float" style={{ color: "#8A8079" }}>
             zZ

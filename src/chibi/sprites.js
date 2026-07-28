@@ -55,3 +55,26 @@ export function frameFor(state, elapsedMs) {
   const cell = CELL[state];
   return cell === undefined ? CELL.idle : cell;
 }
+
+/* ── Алхааны хуудас ──
+   Дүр бүр 4 чиглэлийн (урд/зүүн/баруун/ар) бүтэн алхааны циклтэй тусдаа
+   хуудастай. Багана бүр нэг кадр; мөр бүр нэг чиглэл. Багануудын тоо дүрээр
+   өөр тул хэмжээг энд төвлөрүүлэв. */
+export const WALK_SHEET = {
+  andela: { url: "/chibi/andela-walk.png", cols: 7, rows: 4, cellW: 170, cellH: 241, frameMs: 115 },
+  neko: { url: "/chibi/neko-walk.png", cols: 9, rows: 4, cellW: 153, cellH: 248, frameMs: 90 },
+};
+
+/* Хуудасны мөр бүр аль чиглэл вэ */
+export const WALK_ROW = { down: 0, left: 1, right: 2, up: 3 };
+
+export function gridPosition(col, row, cols, rows) {
+  const cx = cols > 1 ? (col * 100) / (cols - 1) : 0;
+  const cy = rows > 1 ? (row * 100) / (rows - 1) : 0;
+  return `${cx}% ${cy}%`;
+}
+
+/* Тухайн төлөвт орсноос хойшх хугацаанаас алхааны кадрын дугаарыг олно */
+export function walkFrame(elapsedMs, sheet) {
+  return Math.floor(Math.max(0, elapsedMs) / sheet.frameMs) % sheet.cols;
+}
