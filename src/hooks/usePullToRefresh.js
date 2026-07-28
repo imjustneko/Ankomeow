@@ -29,6 +29,10 @@ export function usePullToRefresh(el, onRefresh, enabled) {
   const [settling, setSettling] = useState(false);
   const cbRef = useRef(onRefresh);
   cbRef.current = onRefresh;
+  /* Handler-ууд effect дотор үүсдэг тул refreshing state-ийн шинэ утгыг
+     шууд харж чадахгүй — ref-ээр дамжуулна. */
+  const refreshingRef = useRef(refreshing);
+  refreshingRef.current = refreshing;
 
   useEffect(() => {
     if (!el || !enabled) return;
@@ -44,6 +48,9 @@ export function usePullToRefresh(el, onRefresh, enabled) {
 
     const onDown = (e) => {
       if (e.pointerType === "mouse") return;
+      /* Өмнөх шинэчлэл дуусаагүй байхад шинийг эхлүүлэхгүй —
+         refreshAll давхар дуудагдахаас сэргийлнэ. */
+      if (refreshingRef.current) return;
       if (el.scrollTop > 0) return;
       startX = e.clientX;
       startY = e.clientY;
