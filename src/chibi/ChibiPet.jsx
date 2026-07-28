@@ -36,6 +36,16 @@ function useKeyboardOpen() {
   return open;
 }
 
+/* Хөвж гарах зүрхнүүд — хэмжээ, хазайлт, эргэлт, өнгө нь тус бүр өөр байвал
+   хөөрхөн бөгөөд амьд харагдана. Байрлалыг CSS хувьсагчаар анимацид дамжуулна. */
+const HEARTS = [
+  { delay: 0, dx: "-2px", rot: "-8deg", size: 15, color: "#FF8FAE" },
+  { delay: 120, dx: "16px", rot: "14deg", size: 11, color: "#FFB3C7" },
+  { delay: 240, dx: "-15px", rot: "-16deg", size: 12, color: "#FF9EC0" },
+  { delay: 380, dx: "9px", rot: "10deg", size: 9, color: "#FFC6D6" },
+  { delay: 520, dx: "-7px", rot: "-6deg", size: 13, color: "#FF7FA5" },
+];
+
 export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
   const layerRef = useRef(null);
   const spriteRef = useRef(null);
@@ -204,20 +214,32 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
             transform: `translate3d(${heartsX}px, 0, 0)`,
           }}
         >
-          <span className="chibi-heart" style={{ animationDelay: "0ms" }}>💗</span>
-          <span className="chibi-heart" style={{ animationDelay: "160ms" }}>💗</span>
-          <span className="chibi-heart" style={{ animationDelay: "320ms" }}>💗</span>
+          {HEARTS.map((h, i) => (
+            <span
+              key={i}
+              className="chibi-heart"
+              style={{ animationDelay: `${h.delay}ms`, "--dx": h.dx, "--rot": h.rot, "--size": `${h.size}px` }}
+            >
+              <svg viewBox="0 0 24 22" width={h.size} height={h.size * 22 / 24} aria-hidden="true">
+                <path
+                  d="M12 21.4 3.6 12.9C1.2 10.5 1.2 6.7 3.6 4.3a5.6 5.6 0 0 1 8 0L12 4.7l.4-.4a5.6 5.6 0 0 1 8 0c2.4 2.4 2.4 6.2 0 8.6L12 21.4Z"
+                  fill={h.color}
+                />
+                <ellipse cx="8.4" cy="8.2" rx="2.1" ry="1.4" fill="#fff" opacity=".55" transform="rotate(-28 8.4 8.2)" />
+              </svg>
+            </span>
+          ))}
         </div>
       )}
 
       <style>{`
-        .chibi-heart{position:absolute;font-size:13px;opacity:0;animation:chibi-heart-up 1.4s ease-out forwards}
-        .chibi-heart:nth-child(2){left:14px}
-        .chibi-heart:nth-child(3){left:-12px}
+        .chibi-heart{position:absolute;left:0;bottom:0;line-height:0;opacity:0;
+          animation:chibi-heart-up 1.6s cubic-bezier(.25,.6,.4,1) forwards}
         @keyframes chibi-heart-up{
-          0%{opacity:0;transform:translateY(0) scale(.6)}
-          25%{opacity:1}
-          100%{opacity:0;transform:translateY(-34px) scale(1)}
+          0%{opacity:0;transform:translate3d(0,0,0) scale(.35) rotate(0deg)}
+          18%{opacity:1;transform:translate3d(calc(var(--dx) * .25),-10px,0) scale(1.08) rotate(calc(var(--rot) * .3))}
+          70%{opacity:.9}
+          100%{opacity:0;transform:translate3d(var(--dx),-52px,0) scale(.9) rotate(var(--rot))}
         }
         .chibi-float{animation:chibi-float 1.8s ease-in-out infinite}
         @keyframes chibi-float{0%,100%{transform:translateY(0);opacity:.5}50%{transform:translateY(-4px);opacity:1}}
