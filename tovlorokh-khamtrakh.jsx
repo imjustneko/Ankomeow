@@ -3,11 +3,12 @@ import { ChevronLeft, Check, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, 
 import GIF from "gif.js";
 import gifWorkerUrl from "gif.js/dist/gif.worker.js?url";
 import { initializeApp } from "firebase/app";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, arrayUnion } from "firebase/firestore";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, arrayUnion } from "firebase/firestore";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 import { pushSupported, pushPermission, requestPushToken, notifyPartner, NOTIFY_ENDPOINT } from "./src/push.js";
 import { useKeyboardInset } from "./src/hooks/useKeyboardInset.js";
 import { useSwipeBack } from "./src/hooks/useSwipeBack.js";
+import { usePullToRefresh } from "./src/hooks/usePullToRefresh.js";
 
 /* ── Firebase (хос chat) ── */
 const firebaseConfig = {
@@ -1875,6 +1876,24 @@ export default function App() {
   const profileName = accountKey ? ACCOUNTS[accountKey].name : "";
   const partnerKey = accountKey === "andela" ? "neko" : accountKey === "neko" ? "andela" : null;
 
+  /* Хамтрагчийн өгөгдөл onSnapshot-оор бодит цагт ирдэг ч, iOS дээр PWA удаан
+     дэвсгэрт байгаад буцаж ирэхэд listener үхсэн хэвээр үлддэг. Доош татахад
+     албадан дахин уншиж, зэрэг шинэ хувилбар байгаа эсэхийг шалгана. */
+  const refreshAll = async () => {
+    if (partnerKey) {
+      try {
+        const snap = await getDoc(doc(db, "rooms", CHAT_ROOM, "stats", partnerKey));
+        setPartnerStats(snap.exists() ? snap.data() : null);
+      } catch {}
+    }
+    try {
+      const reg = await navigator.serviceWorker?.getRegistration();
+      await reg?.update();
+    } catch {}
+  };
+
+  const { pull, refreshing } = usePullToRefresh(screenRef, refreshAll, tab !== "chat");
+
   useEffect(() => { const t = setTimeout(() => setBooted(true), 2950); return () => clearTimeout(t); }, []);
 
   /* нэвтэрсэн эсэхийг Firebase Auth-аас сонсоно */
@@ -2121,6 +2140,7 @@ export default function App() {
         @keyframes fadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
         @keyframes slideIn { from{opacity:0;transform:translateX(26px)} to{opacity:1;transform:none} }
         @keyframes slideBack { from{opacity:0;transform:translateX(-26px)} to{opacity:1;transform:none} }
+        @keyframes spin { to{transform:rotate(360deg)} }
         @keyframes leakL { 0%{transform:translate(0,0) scaleY(.6);opacity:0} 10%{opacity:.9} 70%{transform:translate(-14px,255px) scaleY(1.6);opacity:.7} 100%{transform:translate(-17px,278px) scaleY(1.8);opacity:0} }
         @keyframes leakR { 0%{transform:translate(0,0) scaleY(.6);opacity:0} 10%{opacity:.9} 70%{transform:translate(14px,255px) scaleY(1.6);opacity:.7} 100%{transform:translate(17px,278px) scaleY(1.8);opacity:0} }
         @keyframes puddleBreathe { 0%,100%{transform:scale(1);opacity:.55} 50%{transform:scale(1.06);opacity:.7} }
@@ -2208,6 +2228,21 @@ export default function App() {
           <>
             <div ref={screenRef}
               className={`flex-1 px-5 pt-7 min-h-0 flex flex-col ${tab === "chat" ? "pb-3" : "pb-4 overflow-y-auto overscroll-contain"}`}>
+              {(pull > 0 || refreshing) && (
+                <div className="flex items-center justify-center pointer-events-none shrink-0 overflow-hidden"
+                  style={{
+                    height: refreshing ? 34 : pull,
+                    opacity: refreshing ? 1 : Math.min(1, pull / 70),
+                    transition: refreshing ? "height 180ms ease-out" : "none",
+                  }}>
+                  <RefreshCw size={16} strokeWidth={2.6}
+                    style={{
+                      color: C.inkSoft,
+                      transform: `rotate(${refreshing ? 0 : pull * 3}deg)`,
+                      animation: refreshing ? "spin 800ms linear infinite" : "none",
+                    }} />
+                </div>
+              )}
               <div key={tab} className={`${navDir === "back" ? "scr-back" : "scr-in"} ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
                 {tab === "home" && <HomeScreen go={go} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} />}
                 {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} partner={partnerStats} onBack={() => go("home")} />}
