@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createBrain } from "./brain.js";
-import { SPRITE_URL, SPRITE_WIDTH, SPRITE_HEIGHT, cellPosition, frameFor } from "./sprites.js";
+import { SPRITE_URL, SPRITE_WIDTH, SPRITE_HEIGHT, SHEET_FACING, WALK_FRAME_MS, cellPosition, frameFor } from "./sprites.js";
 
 /* Sprite зураг ачаалагдаагүй үед харагдах энгийн орлуулагч —
    хоосон дөрвөлжин гарахаас сэргийлнэ. */
@@ -60,14 +60,28 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
 
   const visible = enabled && !keyboardOpen;
 
-  /* Тархийг нэг удаа үүсгэж, хүрээний өргөнд тааруулна */
+  /* Хэр өндөрт өгсөж болохыг хэмжинэ: sprite нь давхаргын дотор absolute
+     байрлалтай тул offsetTop нь доод шугамаас дээших боломжит зай юм. */
+  const measure = () => ({
+    width: layerRef.current?.clientWidth || 360,
+    rise: Math.max(0, spriteRef.current?.offsetTop ?? 0),
+  });
+
+  /* Тархийг нэг удаа үүсгэж, хүрээний хэмжээнд тааруулна */
   useLayoutEffect(() => {
     if (!visible) return;
-    const width = layerRef.current?.clientWidth || 360;
+    const { width, rise } = measure();
     if (!brainRef.current) {
-      brainRef.current = createBrain({ width, spriteWidth: SPRITE_WIDTH });
+      brainRef.current = createBrain({ width, rise, spriteWidth: SPRITE_WIDTH });
     } else {
-      brainRef.current.setWidth(width);
+      brainRef.current.setSize(width, rise);
+    }
+    /* Эхний кадр зурагдахаас өмнө байрлалыг тавина — эс бөгөөс rAF эхлэх хүртэл
+       зүүн доод буланд нэг агшин анивчина (таб далд үед rAF огт ажиллахгүй). */
+    const s = brainRef.current.snapshot();
+    if (spriteRef.current) {
+      spriteRef.current.style.transform =
+        `translate3d(${s.x}px, ${-s.y}px, 0) scaleX(${SHEET_FACING * s.facing})`;
     }
   }, [visible]);
 
@@ -75,8 +89,8 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
   useEffect(() => {
     if (!visible) return;
     const onResize = () => {
-      const width = layerRef.current?.clientWidth;
-      if (width) brainRef.current?.setWidth(width);
+      const { width, rise } = measure();
+      brainRef.current?.setSize(width, rise);
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
@@ -98,11 +112,14 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
           /* Шилжилт ба толин тусгалыг ЗААВАЛ нэг transform мөрөнд бичнэ.
              Тусдаа `scale` шинж чанар transform-ын ДАРАА нэмэгддэг тул
              зүүн тийш харсан chibi-гийн x сөрөг болж дэлгэцнээс гардаг. */
-          spriteRef.current.style.transform = `translate3d(${s.x}px, 0, 0) scaleX(${s.facing})`;
+          /* Алхах үед бага зэрэг доош-дээш найгана — амьд харагдана */
+          const bob = s.state === "walk" ? Math.sin((s.elapsed / WALK_FRAME_MS) * Math.PI) * 1.5 : 0;
+          spriteRef.current.style.transform =
+            `translate3d(${s.x}px, ${-s.y - bob}px, 0) scaleX(${SHEET_FACING * s.facing})`;
         }
         if (heartsRef.current) {
           /* Зүрхэнд scaleX хийхгүй — emoji толин тусгал болно */
-          heartsRef.current.style.transform = `translate3d(${s.x + SPRITE_WIDTH / 2}px, 0, 0)`;
+          heartsRef.current.style.transform = `translate3d(${s.x + SPRITE_WIDTH / 2}px, ${-s.y}px, 0)`;
         }
         const nextCell = frameFor(s.state, s.elapsed);
         setCell((c) => (c === nextCell ? c : nextCell));
@@ -141,11 +158,11 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
 
   const onPointerDown = (e) => {
     e.currentTarget.setPointerCapture?.(e.pointerId);
-    brainRef.current?.pointerDown(performance.now(), e.clientX);
+    brainRef.current?.pointerDown(performance.now(), e.clientX, e.clientY);
   };
 
   const onPointerMove = (e) => {
-    brainRef.current?.pointerMove(performance.now(), e.clientX);
+    brainRef.current?.pointerMove(performance.now(), e.clientX, e.clientY);
   };
 
   const onPointerUp = () => {
@@ -167,7 +184,9 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
 
   const url = broken ? PLACEHOLDER : SPRITE_URL[character];
   /* Зүрхний контейнерын анхны байрлал — chibi-гийн голоос эхэлнэ */
-  const heartsX = (brainRef.current?.snapshot().x ?? 0) + SPRITE_WIDTH / 2;
+  const heartsSnap = brainRef.current?.snapshot();
+  const heartsX = (heartsSnap?.x ?? 0) + SPRITE_WIDTH / 2;
+  const heartsY = -(heartsSnap?.y ?? 0);
   const sheet = broken
     ? { backgroundImage: `url(${url})`, backgroundSize: "100% 100%", backgroundPosition: "0% 0%" }
     : { backgroundImage: `url(${url})`, backgroundSize: "300% 300%", backgroundPosition: cellPosition(cell) };
@@ -211,7 +230,7 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
             left: 0,
             /* key солигдоход дахин mount болдог тул эхний transform-ыг тархины
                одоогийн x-ээс авна — эс бөгөөс нэг фрэйм зүүн ирмэгт анивчина */
-            transform: `translate3d(${heartsX}px, 0, 0)`,
+            transform: `translate3d(${heartsX}px, ${heartsY}px, 0)`,
           }}
         >
           {HEARTS.map((h, i) => (

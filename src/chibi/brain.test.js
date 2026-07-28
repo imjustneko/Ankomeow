@@ -286,3 +286,82 @@ describe("хуруу таслагдах (pointerCancel)", () => {
     expect(b.snapshot()).toEqual(before);
   });
 });
+
+describe("дээш/доош шилжих", () => {
+  const riseBrain = (rand) =>
+    createBrain({ width: 400, rise: 200, spriteWidth: 72, rand });
+
+  it("rise өгөөгүй бол босоо тэнхлэгээр хөдлөхгүй", () => {
+    const b = makeBrain();
+    b.tick(0);
+    b.tick(30000);
+    expect(b.snapshot().y).toBe(0);
+  });
+
+  it("climb төлөвт орвол зорилтот өндөр рүү дөхнө", () => {
+    /* rand 0.5: cute гарахгүй (0.5 >= 0.34), climb гарна (0.5 < 0.35 биш) —
+       тиймээс climb-ийг гараар шалгахын тулд rand-ыг дараалуулж өгнө */
+    const seq = [0.5, 0.9, 0.2, 0.9];
+    let i = 0;
+    const b = riseBrain(() => seq[i++ % seq.length]);
+    b.tick(0);
+    /* эхний алхаа дуустал */
+    b.tick(DUR.walkMax + 1);
+    const st = b.snapshot();
+    if (st.state === "climb") {
+      const y0 = st.y;
+      b.tick(DUR.walkMax + 1001);
+      expect(b.snapshot().y).not.toBe(y0);
+    }
+    expect(["climb", "idle", "sit", "wave"]).toContain(st.state);
+  });
+
+  it("өндөр нь rise-аас хэтрэхгүй", () => {
+    const b = riseBrain(() => 0.99);
+    b.tick(0);
+    for (let t = 1; t < 60; t++) b.tick(t * 1000);
+    const { y } = b.snapshot();
+    expect(y).toBeGreaterThanOrEqual(0);
+    expect(y).toBeLessThanOrEqual(200);
+  });
+});
+
+describe("хоёр тэнхлэгээр чирэх", () => {
+  const riseBrain = () => createBrain({ width: 400, rise: 200, spriteWidth: 72, rand: () => 0.5 });
+
+  it("дээш чирэхэд chibi дээшилнэ", () => {
+    const b = riseBrain();
+    b.tick(0);
+    b.pointerDown(100, 200, 500);
+    b.pointerMove(150, 200, 440);
+    expect(b.snapshot().y).toBeCloseTo(60, 5);
+  });
+
+  it("тавьсан өндөртөө үлдэнэ — доошоо унахгүй", () => {
+    const b = riseBrain();
+    b.tick(0);
+    b.pointerDown(100, 200, 500);
+    b.pointerMove(150, 200, 420);
+    b.pointerUp(200);
+    b.tick(200 + DUR.land + 1);
+    b.tick(1500);
+    expect(b.snapshot().y).toBeCloseTo(80, 5);
+  });
+
+  it("зөвхөн босоо чиглэлд хөдөлсөн ч чирэлт гэж тооцно", () => {
+    const b = riseBrain();
+    b.tick(0);
+    b.pointerDown(100, 200, 500);
+    b.pointerMove(150, 200, 480);
+    expect(b.snapshot().state).toBe("dragged");
+    expect(b.pointerUp(200)).toEqual({ tapped: false });
+  });
+
+  it("чирэхэд дээд хязгаараас давахгүй", () => {
+    const b = riseBrain();
+    b.tick(0);
+    b.pointerDown(100, 200, 500);
+    b.pointerMove(150, 200, -5000);
+    expect(b.snapshot().y).toBe(200);
+  });
+});

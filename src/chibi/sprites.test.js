@@ -16,11 +16,17 @@ describe("cellPosition", () => {
 });
 
 describe("frameFor", () => {
-  it("алхах үед 320мс тутамд хоёр кадр сольж эргэлдэнэ", () => {
+  it("алхах үед 170мс тутамд хоёр кадр сольж эргэлдэнэ", () => {
     expect(frameFor("walk", 0)).toBe(CELL.walkA);
-    expect(frameFor("walk", 200)).toBe(CELL.walkA);
-    expect(frameFor("walk", 400)).toBe(CELL.walkB);
-    expect(frameFor("walk", 700)).toBe(CELL.walkA);
+    expect(frameFor("walk", 169)).toBe(CELL.walkA);
+    expect(frameFor("walk", 170)).toBe(CELL.walkB);
+    expect(frameFor("walk", 340)).toBe(CELL.walkA);
+    expect(frameFor("walk", 520)).toBe(CELL.walkB);
+  });
+
+  it("өгсөх/буух үед мөн адил алхааны кадрыг ашиглана", () => {
+    expect(frameFor("climb", 0)).toBe(CELL.walkA);
+    expect(frameFor("climb", 200)).toBe(CELL.walkB);
   });
 
   it("алхахаас бусад төлөв тогтмол нүд буцаана", () => {

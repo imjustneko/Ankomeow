@@ -30,8 +30,14 @@ export const CELL = {
 export const SPRITE_WIDTH = 72;
 export const SPRITE_HEIGHT = 72;
 
-/* Алхааны хоёр кадр хэдэн мс тутамд солигдох */
-export const WALK_FRAME_MS = 320;
+/* Зурсан алхааны кадрууд аль тийш харсан бэ: -1 = зүүн, 1 = баруун.
+   Код нь `scaleX(SHEET_FACING * facing)`-ээр эргүүлдэг тул зургаа сольвол
+   зөвхөн энэ утгыг өөрчилнө. */
+export const SHEET_FACING = -1;
+
+/* Алхааны хоёр кадр хэдэн мс тутамд солигдох. Хэт удаан бол хөл нь хөдлөхгүй
+   мэт харагдаж, дүр нь гулсаж яваа сэтгэгдэл төрүүлнэ. */
+export const WALK_FRAME_MS = 170;
 
 export function cellPosition(index) {
   const step = 100 / (GRID - 1);
@@ -42,7 +48,7 @@ export function cellPosition(index) {
 
 /* Төлөв ба тухайн төлөвт орсноос хойшх хугацаанаас харагдах нүдийг олно. */
 export function frameFor(state, elapsedMs) {
-  if (state === "walk") {
+  if (state === "walk" || state === "climb") {
     return Math.floor(elapsedMs / WALK_FRAME_MS) % 2 === 0 ? CELL.walkA : CELL.walkB;
   }
   if (state === "land") return CELL.idle;
