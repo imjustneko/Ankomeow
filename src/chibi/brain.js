@@ -110,6 +110,16 @@ export function createBrain({ width, spriteWidth, rand = Math.random }) {
       enter("happy", at, DUR.happy);
     },
 
+    /* Хөдөлгөөний цикл түр зогсоод дахин эхлэхэд (таб нуугдах, гар нээгдэх)
+       алгассан хугацааг тооцохгүй — эс бөгөөс chibi хана руу үсэрч, шууд унтана. */
+    resume(at) {
+      const gap = at - now;
+      if (gap <= 0) return;
+      now = at;
+      stateStart += gap;
+      lastTouch += gap;
+    },
+
     pointerDown(at, clientX) {
       if (pointer) return; /* хоёр дахь хуруу — үл тоомсорлоно */
       now = at;

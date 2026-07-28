@@ -137,6 +137,37 @@ describe("хүрээний өргөн өөрчлөгдөх", () => {
   });
 });
 
+describe("түр зогсоод сэргэх (resume)", () => {
+  it("удаан завсарлагааны дараа алгассан хугацааг тооцохгүй — нэг фрэймийн зайгаар л шилжинэ", () => {
+    const b = makeBrain();
+    b.tick(0);
+    const startX = b.snapshot().x;
+    /* таб 5 минут нуугдсан гэж бодъё */
+    b.resume(5 * 60 * 1000);
+    b.tick(5 * 60 * 1000 + 16);
+    const dx = b.snapshot().x - startX;
+    expect(dx).toBeCloseTo((SPEED * 16) / 1000, 5);
+  });
+
+  it("sleepAfter-ээс урт завсарлагааны дараа шууд унтахгүй", () => {
+    const b = makeBrain();
+    b.tick(0);
+    const gap = DUR.sleepAfter * 3;
+    b.resume(gap);
+    b.tick(gap + 16);
+    expect(b.snapshot().state).not.toBe("sleep");
+  });
+
+  it("цаг ухраагүй бол resume нөлөөгүй (no-op)", () => {
+    const b = makeBrain();
+    b.tick(1000);
+    const before = b.snapshot();
+    b.resume(500); /* дотоод цагаас өмнөх агшин — үл тоомсорлоно */
+    b.tick(1000);
+    expect(b.snapshot()).toEqual(before);
+  });
+});
+
 describe("чирэх", () => {
   it("6px-ээс бага хөдөлгөөнтэй дарж авбал товшилт болно", () => {
     const b = makeBrain();

@@ -100,7 +100,9 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
     };
 
     const start = () => {
-      if (!rafRef.current) rafRef.current = requestAnimationFrame(loop);
+      if (rafRef.current) return;
+      brainRef.current?.resume(performance.now());
+      rafRef.current = requestAnimationFrame(loop);
     };
     const stop = () => {
       cancelAnimationFrame(rafRef.current);
