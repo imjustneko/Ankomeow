@@ -9,6 +9,8 @@ import { pushSupported, pushPermission, requestPushToken, notifyPartner, NOTIFY_
 import { useKeyboardInset } from "./src/hooks/useKeyboardInset.js";
 import { useSwipeBack } from "./src/hooks/useSwipeBack.js";
 import { usePullToRefresh } from "./src/hooks/usePullToRefresh.js";
+import ChibiPet from "./src/chibi/ChibiPet.jsx";
+import { createPokeSender } from "./src/chibi/poke.js";
 
 /* ── Firebase (хос chat) ── */
 const firebaseConfig = {
@@ -1853,6 +1855,8 @@ export default function App() {
   const [avatar, setAvatar] = useState(saved.avatar ?? IC_PROFILE);
   const [avatarThumb, setAvatarThumb] = useState(null);
   const [peekToast, setPeekToast] = useState(null);
+  const [chibiEnabled, setChibiEnabled] = useState(() => localStorage.getItem("ankomeow-chibi-off") !== "1");
+  const [chibiHappyAt, setChibiHappyAt] = useState(null);
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [screenApps, setScreenApps] = useState(saved.screenApps ?? []);
@@ -2007,6 +2011,36 @@ export default function App() {
     }, () => {});
     return unsub;
   }, [accountKey, partnerKey]);
+
+  /* Chibi товшилтыг хос руу дамжуулах илгээгч — хосын түлхүүр солигдвол шинэчлэгдэнэ */
+  const pokeSender = useMemo(() => {
+    if (!partnerKey) return null;
+    return createPokeSender({
+      partnerName: ACCOUNTS[partnerKey]?.name || "Хамтрагч",
+      writeDoc: ({ count }) =>
+        setDoc(doc(db, "rooms", CHAT_ROOM, "pokes", partnerKey), {
+          from: accountKey, count, at: serverTimestamp(),
+        }),
+      sendPush: ({ title, body, tag }) =>
+        notifyPartner(auth, { to: partnerKey, title, body, tag, tab: "home" }),
+    });
+  }, [accountKey, partnerKey]);
+
+  /* Хос миний chibi-г товшлоо — дэлгэц дээрх chibi баярлана */
+  useEffect(() => {
+    if (!accountKey) return;
+    const unsub = onSnapshot(doc(db, "rooms", CHAT_ROOM, "pokes", accountKey), (snap) => {
+      const at = snap.data()?.at;
+      if (!at) return;
+      const ms = at.toMillis();
+      const lastSeen = Number(localStorage.getItem("ankomeow-last-poke") || 0);
+      if (ms > lastSeen) {
+        localStorage.setItem("ankomeow-last-poke", String(ms));
+        setChibiHappyAt(ms);
+      }
+    }, () => {});
+    return unsub;
+  }, [accountKey]);
 
   /* мэдэгдлийн одоогийн төлөвийг тодорхойлно */
   useEffect(() => {
@@ -2208,6 +2242,16 @@ export default function App() {
           <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#FEBC2E" }} />
           <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#28C840" }} />
         </div>
+
+        {/* Хосын chibi — зөвхөн нэвтэрсэн, splash дууссан үед */}
+        {booted && user && partnerKey && (
+          <ChibiPet
+            character={partnerKey}
+            enabled={chibiEnabled}
+            happyAt={chibiHappyAt}
+            onPoke={() => pokeSender?.poke(Date.now())}
+          />
+        )}
 
         {/* Хамтрагч чиний мэдээллийг харлаа гэсэн богино мэдэгдэл */}
         {peekToast && (
