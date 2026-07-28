@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createBrain, DUR, SPEED } from "./brain.js";
+import { createBrain, DUR, SPEED, DRAG_THRESHOLD } from "./brain.js";
 
 /* Санамсаргүй байдлыг тестэд тогтмол болгоно */
 const fixedRand = (v) => () => v;
@@ -134,5 +134,88 @@ describe("хүрээний өргөн өөрчлөгдөх", () => {
     b.setWidth(120);
     expect(b.snapshot().x).toBeLessThanOrEqual(120 - 72);
     expect(b.snapshot().x).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("чирэх", () => {
+  it("6px-ээс бага хөдөлгөөнтэй дарж авбал товшилт болно", () => {
+    const b = makeBrain();
+    b.tick(0);
+    b.pointerDown(100, 200);
+    b.pointerMove(150, 203);
+    expect(b.pointerUp(200)).toEqual({ tapped: true });
+  });
+
+  it("6px-ээс их хөдөлбөл чирэлт болж, товшилт бүртгэгдэхгүй", () => {
+    const b = makeBrain();
+    b.tick(0);
+    b.pointerDown(100, 200);
+    b.pointerMove(150, 220);
+    expect(b.snapshot().state).toBe("dragged");
+    expect(b.pointerUp(200)).toEqual({ tapped: false });
+  });
+
+  it("чирэх үед chibi хурууны хөдөлгөөнийг дагана", () => {
+    const b = makeBrain();
+    b.tick(0);
+    const startX = b.snapshot().x;
+    b.pointerDown(100, 200);
+    b.pointerMove(150, 240);
+    expect(b.snapshot().x).toBeCloseTo(startX + 40, 5);
+  });
+
+  it("чирэх үед хүрээнээс гарахгүй", () => {
+    const b = makeBrain();
+    b.tick(0);
+    b.pointerDown(100, 200);
+    b.pointerMove(150, 5000);
+    expect(b.snapshot().x).toBe(400 - 72);
+  });
+
+  it("тавихад land төлөвт орж, дараа нь алхаанд буцна", () => {
+    const b = makeBrain();
+    b.tick(0);
+    b.pointerDown(100, 200);
+    b.pointerMove(150, 220);
+    b.pointerUp(200);
+    expect(b.snapshot().state).toBe("land");
+    b.tick(200 + DUR.land + 1);
+    expect(b.snapshot().state).toBe("walk");
+  });
+
+  it("чирэх үед tick байрлалыг хөдөлгөхгүй", () => {
+    const b = makeBrain();
+    b.tick(0);
+    b.pointerDown(100, 200);
+    b.pointerMove(150, 220);
+    const x = b.snapshot().x;
+    b.tick(3000);
+    expect(b.snapshot().x).toBe(x);
+  });
+
+  it("хоёр дахь хуруу үл тоогдоно", () => {
+    const b = makeBrain();
+    b.tick(0);
+    const startX = b.snapshot().x;
+    b.pointerDown(100, 200);
+    b.pointerDown(110, 350); /* хоёр дахь хуруу — эхнийхийг дарж бичихгүй */
+    b.pointerMove(150, 220);
+    /* эхний хурууны 200 → 220 шилжилтээр л тооцоолно, 350-аас биш */
+    expect(b.snapshot().x).toBeCloseTo(startX + 20, 5);
+    expect(b.pointerUp(200)).toEqual({ tapped: false });
+  });
+
+  it("чирэлт унтахыг таслана", () => {
+    const b = makeBrain();
+    b.tick(0);
+    b.tick(DUR.sleepAfter + 1);
+    expect(b.snapshot().state).toBe("sleep");
+    b.pointerDown(DUR.sleepAfter + 2, 200);
+    b.pointerMove(DUR.sleepAfter + 3, 240);
+    expect(b.snapshot().state).toBe("dragged");
+  });
+
+  it("DRAG_THRESHOLD нь 6px", () => {
+    expect(DRAG_THRESHOLD).toBe(6);
   });
 });

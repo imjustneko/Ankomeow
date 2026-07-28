@@ -6,6 +6,9 @@
 
 export const SPEED = 20; /* px/сек — удаан, хөөрхөн */
 
+/* Дарснаас хойш энэ зайнаас их хөдөлбөл товшилт биш, чирэлт гэж үзнэ */
+export const DRAG_THRESHOLD = 6;
+
 export const DUR = {
   walkMin: 3000,
   walkMax: 6000,
@@ -31,6 +34,7 @@ export function createBrain({ width, spriteWidth, rand = Math.random }) {
   let now = 0;
   let lastTouch = 0;
   let cycles = 0;
+  let pointer = null; /* { startClientX, startX, moved } — идэвхтэй нэг л хуруу */
 
   const maxX = () => Math.max(0, frameWidth - spriteWidth);
   const clampX = () => { x = Math.min(Math.max(x, 0), maxX()); };
@@ -104,6 +108,38 @@ export function createBrain({ width, spriteWidth, rand = Math.random }) {
       now = at;
       lastTouch = at;
       enter("happy", at, DUR.happy);
+    },
+
+    pointerDown(at, clientX) {
+      if (pointer) return; /* хоёр дахь хуруу — үл тоомсорлоно */
+      now = at;
+      lastTouch = at;
+      pointer = { startClientX: clientX, startX: x, moved: false };
+    },
+
+    pointerMove(at, clientX) {
+      if (!pointer) return;
+      now = at;
+      lastTouch = at;
+      const dx = clientX - pointer.startClientX;
+      if (!pointer.moved && Math.abs(dx) < DRAG_THRESHOLD) return;
+      pointer.moved = true;
+      if (state !== "dragged") enter("dragged", at, Infinity);
+      x = pointer.startX + dx;
+      clampX();
+    },
+
+    pointerUp(at) {
+      if (!pointer) return { tapped: false };
+      now = at;
+      lastTouch = at;
+      const { moved } = pointer;
+      pointer = null;
+      if (moved) {
+        enter("land", at, DUR.land);
+        return { tapped: false };
+      }
+      return { tapped: true };
     },
 
     setWidth(next) {
