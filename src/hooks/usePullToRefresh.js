@@ -33,6 +33,8 @@ export function usePullToRefresh(el, onRefresh, enabled) {
   useEffect(() => {
     if (!el || !enabled) return;
 
+    let live = true; /* энэ effect instance идэвхтэй эсэх */
+
     let startX = 0;
     let startY = 0;
     let tracking = false;
@@ -93,12 +95,10 @@ export function usePullToRefresh(el, onRefresh, enabled) {
       } catch {
         /* алдаа гарсан ч indicator хаагдана — хоосон дэлгэц гаргахгүй */
       } finally {
-        /* Effect дахин ажиллах эсвэл unmount болсон ч гэсэн indicator-ыг
-           гацаалгүй хаана — cleanup нь энэ дуудлагаас өмнө аль хэдийн
-           refreshing-ийг false болгосон байж болох ч давхар дуудахад
-           асуудалгүй (React 18 дээр unmount-ын дараах setState-д анхаарах
-           шаардлагагүй). */
-        setRefreshing(false);
+        /* Хуучирсан effect instance-ийн дуудлага шинэ шинэчлэлийн indicator-ыг
+           эрт хаахаас сэргийлнэ. Гацах эрсдэлгүй — доорх cleanup нь
+           refreshing-ийг нөхцөлгүйгээр false болгодог. */
+        if (live) setRefreshing(false);
       }
     };
 
@@ -117,6 +117,7 @@ export function usePullToRefresh(el, onRefresh, enabled) {
     el.addEventListener("pointercancel", onCancel);
 
     return () => {
+      live = false;
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerup", finish);
@@ -128,6 +129,7 @@ export function usePullToRefresh(el, onRefresh, enabled) {
          тухайн effect-ийн closure аль хэдийн хуучирсан байдаг). */
       setPull(0);
       setRefreshing(false);
+      setSettling(false);
     };
   }, [el, enabled]);
 
