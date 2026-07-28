@@ -1,0 +1,53 @@
+/* iOS-д зориулсан хүрэлтийн давхарга.
+   index.css (Tailwind)-ийн дараа ачаалагдана — base давхаргыг дарж бичнэ. */
+
+:root {
+  /* Гарын эзэлж буй өндөр. useKeyboardInset бөглөнө. */
+  --kb-inset: 0px;
+}
+
+html,
+body {
+  /* Бүх дэлгэц резин мэт дүүжлэгдэх, санамсаргүй pull-to-refresh хийгдэхийг зогсооно */
+  overscroll-behavior: none;
+}
+
+@media (max-width: 640px) {
+  /* Гар утсан дээр frame нь яг viewport-ын өндөртэй тул баримт бичиг гүйх ёсгүй */
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+}
+
+* {
+  /* Дарахад гарах саарал дөрвөлжин гэрэлтэлт */
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a,
+nav,
+img,
+svg {
+  /* Урт дарахад гарах Copy/Share цэс болон зураг чирэх */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+button,
+a {
+  /* Давхар товшилтын 300ms саатал */
+  touch-action: manipulation;
+}
+
+/* Бичих талбарыг сонгох боломжтой үлдээнэ. Чатны мессежийн текст нь энгийн div
+   дотор байгаа тул дээрх user-select:none дүрэмд хамрагдахгүй — сонгогдох хэвээр. */
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
