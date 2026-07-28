@@ -3,6 +3,7 @@
 @tailwind utilities;
 
 :root{
-  /* chibi таб барын дээгүүр алхана */
-  --chibi-baseline: 84px;
+  /* chibi таб барын дээгүүр алхана — таб бар нь safe-area-inset-bottom-оор
+     дээшилдэг тул chibi-гийн суурийг мөн тэр хэмжээгээр өргөнө */
+  --chibi-baseline: calc(84px + env(safe-area-inset-bottom));
 }

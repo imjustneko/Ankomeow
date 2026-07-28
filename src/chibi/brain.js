@@ -152,6 +152,18 @@ export function createBrain({ width, spriteWidth, rand = Math.random }) {
       return { tapped: true };
     },
 
+    /* Систем хурууг таслав (iOS ирмэгийн swipe, урт дарах цэс, ирсэн дуудлага).
+       Товшилт гэж НЭГ Ч ТОХИОЛДОЛД тооцохгүй — түншид хуурамч мэдэгдэл очно.
+       Чирэлт болж амжсан бол pointerUp-тай адил land төлөвт буулгана. */
+    pointerCancel(at) {
+      if (!pointer) return;
+      now = at;
+      lastTouch = at;
+      const { moved } = pointer;
+      pointer = null;
+      if (moved) enter("land", at, DUR.land);
+    },
+
     setWidth(next) {
       frameWidth = next;
       clampX();

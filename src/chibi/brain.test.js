@@ -250,3 +250,39 @@ describe("чирэх", () => {
     expect(DRAG_THRESHOLD).toBe(6);
   });
 });
+
+describe("хуруу таслагдах (pointerCancel)", () => {
+  it("хөдөлгөөнгүй дарснаа таслахад товшилт болохгүй, chibi алхаагаа үргэлжлүүлнэ", () => {
+    const b = makeBrain();
+    b.tick(0);
+    b.pointerDown(100, 200);
+    b.pointerMove(150, 203); /* босгоос бага — pointerUp бол товшилт болох байсан */
+    b.pointerCancel(200);
+    expect(b.snapshot().state).toBe("walk");
+    /* хуруу цэвэрлэгдсэн тул дараагийн pointerUp давхар товшилт үүсгэхгүй */
+    expect(b.pointerUp(250)).toEqual({ tapped: false });
+    const x = b.snapshot().x;
+    b.tick(1000);
+    expect(b.snapshot().x).toBeGreaterThan(x);
+  });
+
+  it("чирж байхад таслахад land төлөвт буугаад алхаанд буцна", () => {
+    const b = makeBrain();
+    b.tick(0);
+    b.pointerDown(100, 200);
+    b.pointerMove(150, 220);
+    expect(b.snapshot().state).toBe("dragged");
+    b.pointerCancel(200);
+    expect(b.snapshot().state).toBe("land");
+    b.tick(200 + DUR.land + 1);
+    expect(b.snapshot().state).toBe("walk");
+  });
+
+  it("идэвхтэй хуруугүй үед pointerCancel нөлөөгүй (no-op)", () => {
+    const b = makeBrain();
+    b.tick(1000);
+    const before = b.snapshot();
+    b.pointerCancel(2000);
+    expect(b.snapshot()).toEqual(before);
+  });
+});

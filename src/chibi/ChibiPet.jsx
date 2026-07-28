@@ -43,7 +43,6 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
   const brainRef = useRef(null);
   const rafRef = useRef(0);
   const [cell, setCell] = useState(0);
-  const [facing, setFacing] = useState(1);
   const [state, setState] = useState("walk");
   const [hearts, setHearts] = useState(0); /* зүрхний анимацийг дахин эхлүүлэх түлхүүр */
   const [broken, setBroken] = useState(false);
@@ -86,14 +85,17 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
         brain.tick(t);
         const s = brain.snapshot();
         if (spriteRef.current) {
-          spriteRef.current.style.transform = `translate3d(${s.x}px, 0, 0)`;
+          /* Шилжилт ба толин тусгалыг ЗААВАЛ нэг transform мөрөнд бичнэ.
+             Тусдаа `scale` шинж чанар transform-ын ДАРАА нэмэгддэг тул
+             зүүн тийш харсан chibi-гийн x сөрөг болж дэлгэцнээс гардаг. */
+          spriteRef.current.style.transform = `translate3d(${s.x}px, 0, 0) scaleX(${s.facing})`;
         }
         if (heartsRef.current) {
+          /* Зүрхэнд scaleX хийхгүй — emoji толин тусгал болно */
           heartsRef.current.style.transform = `translate3d(${s.x + SPRITE_WIDTH / 2}px, 0, 0)`;
         }
         const nextCell = frameFor(s.state, s.elapsed);
         setCell((c) => (c === nextCell ? c : nextCell));
-        setFacing((f) => (f === s.facing ? f : s.facing));
         setState((st) => (st === s.state ? st : s.state));
       }
       rafRef.current = requestAnimationFrame(loop);
@@ -145,9 +147,17 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
     onPoke?.();
   };
 
+  /* pointercancel (iOS ирмэгийн swipe, урт дарах цэс, дуудлага) — товшилт БИШ.
+     Зөвхөн хурууг суллана: poke, зүрх, чичиргээ, түншид мэдэгдэл байхгүй. */
+  const onPointerCancel = () => {
+    brainRef.current?.pointerCancel(performance.now());
+  };
+
   if (!visible) return null;
 
   const url = broken ? PLACEHOLDER : SPRITE_URL[character];
+  /* Зүрхний контейнерын анхны байрлал — chibi-гийн голоос эхэлнэ */
+  const heartsX = (brainRef.current?.snapshot().x ?? 0) + SPRITE_WIDTH / 2;
   const sheet = broken
     ? { backgroundImage: `url(${url})`, backgroundSize: "100% 100%", backgroundPosition: "0% 0%" }
     : { backgroundImage: `url(${url})`, backgroundSize: "300% 300%", backgroundPosition: cellPosition(cell) };
@@ -162,7 +172,7 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        onPointerCancel={onPointerCancel}
         className="absolute pointer-events-auto touch-none select-none"
         style={{
           width: SPRITE_WIDTH,
@@ -172,8 +182,6 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
           transform: "translate3d(0,0,0)",
           backgroundRepeat: "no-repeat",
           ...sheet,
-          scale: facing === -1 ? "-1 1" : "1 1",
-          transition: state === "land" ? "translate 200ms cubic-bezier(.2,.8,.3,1)" : "none",
         }}
       >
         {state === "sleep" && (
@@ -184,7 +192,18 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
       </div>
 
       {(state === "blush" || state === "happy") && (
-        <div ref={heartsRef} key={hearts} className="absolute pointer-events-none" style={{ bottom: "calc(var(--chibi-baseline, 84px) + 48px)", left: 0 }}>
+        <div
+          ref={heartsRef}
+          key={hearts}
+          className="absolute pointer-events-none"
+          style={{
+            bottom: "calc(var(--chibi-baseline, 84px) + 48px)",
+            left: 0,
+            /* key солигдоход дахин mount болдог тул эхний transform-ыг тархины
+               одоогийн x-ээс авна — эс бөгөөс нэг фрэйм зүүн ирмэгт анивчина */
+            transform: `translate3d(${heartsX}px, 0, 0)`,
+          }}
+        >
           <span className="chibi-heart" style={{ animationDelay: "0ms" }}>💗</span>
           <span className="chibi-heart" style={{ animationDelay: "160ms" }}>💗</span>
           <span className="chibi-heart" style={{ animationDelay: "320ms" }}>💗</span>
