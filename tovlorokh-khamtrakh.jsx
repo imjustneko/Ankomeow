@@ -1199,7 +1199,7 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey }) {
         </div>
       )}
 
-      <div className="flex gap-2 items-center pb-1">
+      <div className="safe-bottom-pad flex gap-2 items-center pb-1">
         <button onClick={() => setShowReact((s) => !s)}
           className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center active:scale-95"
           style={{
@@ -2123,7 +2123,17 @@ export default function App() {
         }
         @media (max-width:640px){
           .app-shell{padding:0;min-height:100dvh;min-height:100svh}
-          .app-frame{max-width:100%;height:100dvh;height:100svh;border-radius:0;border:none;box-shadow:none}
+          .app-frame{
+            max-width:100%;
+            height:100dvh;height:100svh;
+            border-radius:0;border:none;box-shadow:none;
+            padding-top:env(safe-area-inset-top);
+          }
+          /* macOS цонхны 3 цэг нь утсан дээр notch-ны хэсэгт таарах бөгөөд утгагүй */
+          .mac-dots{display:none}
+          /* Доод nav болон чатны бичих мөр home indicator шугам дээр таарахгүй байх */
+          .safe-bottom{margin-bottom:calc(16px + env(safe-area-inset-bottom))}
+          .safe-bottom-pad{padding-bottom:env(safe-area-inset-bottom)}
         }
       `}</style>
 
@@ -2136,8 +2146,8 @@ export default function App() {
           backgroundRepeat: "repeat, no-repeat, no-repeat",
         }}>
 
-        {/* macOS traffic light — бүх дэлгэц дээр байнга зүүн дээд буланд */}
-        <div className="absolute top-4 left-5 z-30 flex items-center gap-1.5 pointer-events-none">
+        {/* macOS traffic light — зөвхөн desktop дээр (утсан дээр .mac-dots-оор нуугдана) */}
+        <div className="mac-dots absolute top-4 left-5 z-30 flex items-center gap-1.5 pointer-events-none">
           <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#FF5F57" }} />
           <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#FEBC2E" }} />
           <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#28C840" }} />
@@ -2182,14 +2192,14 @@ export default function App() {
             </div>
 
             {tab !== "chat" && (
-              <nav className="flex justify-around items-center gap-1 py-2.5 px-3 mx-4 mb-4 rounded-full shrink-0"
+              <nav className="safe-bottom flex justify-around items-center gap-1 py-2 px-3 mx-4 mb-4 rounded-full shrink-0"
                 style={{ background: C.card, border: `1.5px solid ${C.line}`, boxShadow: "0 10px 24px rgba(92,74,58,.14)" }}>
                 {nav.map(({ id, icon, label, c, c2 }) => {
                   const on = tab === id;
                   return (
                     <button key={id} onClick={() => setTab(id)}
-                      className="flex flex-col items-center gap-1 px-1.5 py-1 rounded-2xl">
-                      <span className="w-9 h-9 rounded-2xl flex items-center justify-center overflow-hidden"
+                      className="flex flex-col items-center justify-center gap-1 px-1.5 py-1.5 rounded-2xl min-h-[44px]">
+                      <span className="w-10 h-10 rounded-2xl flex items-center justify-center overflow-hidden"
                         style={{
                           background: on ? `linear-gradient(155deg, ${c2 || c} 0%, ${c} 100%)` : C.cardIn,
                           boxShadow: on ? "0 3px 8px rgba(92,74,58,.22)" : "none",
@@ -2197,7 +2207,7 @@ export default function App() {
                         }}>
                         <img src={icon} alt="" className="w-full h-full object-cover" />
                       </span>
-                      <span className="text-[9px] font-extrabold" style={{ color: on ? C.ink : C.inkSoft }}>{label}</span>
+                      <span className="text-[10px] font-extrabold leading-none" style={{ color: on ? C.ink : C.inkSoft }}>{label}</span>
                     </button>
                   );
                 })}
