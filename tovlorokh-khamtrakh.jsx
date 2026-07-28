@@ -7,6 +7,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 import { pushSupported, pushPermission, requestPushToken, notifyPartner, NOTIFY_ENDPOINT } from "./src/push.js";
 import { useKeyboardInset } from "./src/hooks/useKeyboardInset.js";
+import { useSwipeBack } from "./src/hooks/useSwipeBack.js";
 
 /* ── Firebase (хос chat) ── */
 const firebaseConfig = {
@@ -1818,6 +1819,8 @@ export default function App() {
   const [tab, setTab] = useState("home");
 
   useKeyboardInset();
+  const screenRef = useRef(null);
+  useSwipeBack(screenRef, () => setTab("home"), tab !== "home");
   const [ml, setMl] = useState(saved.ml ?? 750);
   const [log, setLog] = useState(saved.log ?? [{ v: 500, t: "08:20" }, { v: 250, t: "11:05" }]);
   const [weight, setWeight] = useState(saved.weight ?? 60);
@@ -2192,7 +2195,8 @@ export default function App() {
           </div>
         ) : (
           <>
-            <div className={`flex-1 px-5 pt-7 min-h-0 flex flex-col ${tab === "chat" ? "pb-3" : "pb-4 overflow-y-auto overscroll-contain"}`}>
+            <div ref={screenRef}
+              className={`flex-1 px-5 pt-7 min-h-0 flex flex-col ${tab === "chat" ? "pb-3" : "pb-4 overflow-y-auto overscroll-contain"}`}>
               <div key={tab} className={`scr ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
                 {tab === "home" && <HomeScreen go={setTab} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} />}
                 {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} partner={partnerStats} onBack={() => setTab("home")} />}
