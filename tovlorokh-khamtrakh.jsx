@@ -573,7 +573,8 @@ function ListScreen({ items, setItems, partner, onBack }) {
           <div className="flex gap-2 mb-4">
             <input value={text} onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addItem()} placeholder="Юу хийх вэ?"
-              className="flex-1 rounded-full px-5 py-2.5 text-[14px] font-medium outline-none"
+              enterKeyHint="done" autoCapitalize="sentences" autoCorrect="off"
+              className="flex-1 rounded-full px-5 py-2.5 text-[16px] font-medium outline-none"
               style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
             <button onClick={addItem}
               className="shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center active:scale-95"
@@ -1223,7 +1224,8 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey }) {
         </button>
         <input value={text} onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && onSend()} placeholder="Мессеж бичих..."
-          className="flex-1 min-w-0 rounded-full px-4 py-2.5 text-[13.5px] font-medium outline-none"
+          enterKeyHint="send" autoCapitalize="sentences" autoCorrect="off"
+          className="flex-1 min-w-0 rounded-full px-4 py-2.5 text-[16px] font-medium outline-none"
           style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
         <button onClick={onSend}
           className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center active:scale-95"
@@ -1409,11 +1411,13 @@ function ChangePasswordCard() {
       <div className="space-y-2 mb-2.5">
         <input type="password" value={cur} onChange={(e) => { setCur(e.target.value); setMsg(null); }}
           placeholder="Одоогийн нууц үг"
-          className="w-full rounded-full px-4 py-2.5 text-[13px] font-medium outline-none"
+          autoComplete="current-password" enterKeyHint="next"
+          className="w-full rounded-full px-4 py-2.5 text-[16px] font-medium outline-none"
           style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
         <input type="password" value={next} onChange={(e) => { setNext(e.target.value); setMsg(null); }}
           onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Шинэ нууц үг"
-          className="w-full rounded-full px-4 py-2.5 text-[13px] font-medium outline-none"
+          autoComplete="new-password" enterKeyHint="done"
+          className="w-full rounded-full px-4 py-2.5 text-[16px] font-medium outline-none"
           style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
       </div>
       {msg && (
@@ -1642,7 +1646,8 @@ function LoginScreen() {
 
       <input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setError(""); }}
         onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Нууц үг" disabled={!pick} autoFocus
-        className="w-full max-w-[240px] rounded-full px-4 py-2.5 text-[13.5px] font-medium text-center outline-none mb-1 disabled:opacity-40"
+        autoComplete="current-password" enterKeyHint="go"
+        className="w-full max-w-[240px] rounded-full px-4 py-2.5 text-[16px] font-medium text-center outline-none mb-1 disabled:opacity-40"
         style={{ background: C.card, border: `1.8px solid ${error ? C.peachDeep : C.line2}`, color: C.ink }} />
       <p className="text-[10.5px] font-bold mb-3" style={{ color: error ? C.peachDeep : "transparent", minHeight: 14 }}>
         {error || "Нууц үг буруу байна"}
