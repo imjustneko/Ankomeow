@@ -62,7 +62,12 @@ export function useSwipeBack(ref, onBack, enabled) {
       const dx = e.clientX - startX;
       const dt = Math.max(1, e.timeStamp - startT);
       const passed = dx > el.clientWidth * COMMIT_RATIO || dx / dt > COMMIT_VELOCITY;
-      settle(true);
+      /* Шударлага амжилттай бол дараагийн агшинд шинэ дэлгэц өөрөө .scr-back
+         анимацаар гулсаж орж ирнэ — эцгийн transform-ыг анимацгүйгээр шууд
+         цэвэрлэнэ, эс бөгөөс хоёр анимац давхцаж доргилт мэт харагдана.
+         Амжилтгүй бол (байрандаа буцах) ганцхан энэ анимац ажиллах тул
+         хэвээр 220ms-ээр гөлгөр буцаана. */
+      settle(passed ? false : true);
       if (passed) backRef.current();
     };
 
