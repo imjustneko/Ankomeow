@@ -4,6 +4,7 @@ import {
   SPRITE_URL, SPRITE_WIDTH, SPRITE_HEIGHT, SHEET_FACING, WALK_SHEET, WALK_ROW,
   cellPosition, gridPosition, frameFor, walkFrame,
 } from "./sprites.js";
+import { TALKATIVE, pickPhrase } from "./phrases.js";
 
 /* Sprite зураг ачаалагдаагүй үед харагдах энгийн орлуулагч —
    хоосон дөрвөлжин гарахаас сэргийлнэ. */
@@ -55,6 +56,8 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
   const heartsRef = useRef(null);
   const brainRef = useRef(null);
   const rafRef = useRef(0);
+  const bubbleRef = useRef(null);
+  const [phrase, setPhrase] = useState(null); /* { text, key } — товшиход гарах үг */
   const boxWRef = useRef(SPRITE_WIDTH);
   const walkSheetRef = useRef(null);
   const [state, setState] = useState("walk");
@@ -129,6 +132,14 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
         if (heartsRef.current) {
           heartsRef.current.style.transform = `translate3d(${s.x + SPRITE_WIDTH / 2}px, ${-s.y}px, 0)`;
         }
+        if (bubbleRef.current) {
+          /* Бөмбөлөг хүрээнээс гарч тасрахгүйн тулд хоёр талаас нь барина */
+          const half = bubbleRef.current.offsetWidth / 2 + 6;
+          const w = layerRef.current?.clientWidth || 360;
+          const bx = Math.min(Math.max(s.x + SPRITE_WIDTH / 2, half), Math.max(half, w - half));
+          bubbleRef.current.style.transform = `translate3d(${bx}px, ${-s.y}px, 0)`;
+        }
+        /* Бөмбөлөг зөвхөн blush төлөвт зурагддаг тул төлөв солигдмогц өөрөө арилна */
         setState((st) => (st === s.state ? st : s.state));
       }
       rafRef.current = requestAnimationFrame(loop);
@@ -176,6 +187,9 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
     if (!res?.tapped) return;
     brainRef.current?.poke(performance.now());
     setHearts((h) => h + 1);
+    if (character === TALKATIVE) {
+      setPhrase((prev) => ({ text: pickPhrase(prev?.text), key: (prev?.key ?? 0) + 1 }));
+    }
     navigator.vibrate?.(12);
     onPoke?.();
   };
@@ -249,6 +263,17 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
         )}
       </div>
 
+      {phrase && state === "blush" && (
+        <div
+          ref={bubbleRef}
+          key={phrase.key}
+          className="absolute pointer-events-none chibi-bubble"
+          style={{ bottom: "calc(var(--chibi-baseline, 84px) + 74px)", left: 0, transform: `translate3d(${heartsX}px, ${heartsY}px, 0)` }}
+        >
+          <span className="chibi-bubble-body">{phrase.text}</span>
+        </div>
+      )}
+
       {(state === "blush" || state === "happy") && (
         <div
           ref={heartsRef}
@@ -289,10 +314,22 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
           70%{opacity:.9}
           100%{opacity:0;transform:translate3d(var(--dx),-52px,0) scale(.9) rotate(var(--rot))}
         }
+        .chibi-bubble{transform-origin:bottom center;animation:chibi-bubble-pop 340ms cubic-bezier(.2,1.3,.4,1) both}
+        .chibi-bubble-body{position:relative;display:inline-block;transform:translateX(-50%);white-space:nowrap;
+          padding:5px 10px;border-radius:14px;background:#FFF9F1;color:#4A4038;border:1.6px solid #E7DCCB;
+          font-size:11px;font-weight:800;line-height:1.2;box-shadow:0 3px 10px rgba(74,64,56,.14)}
+        .chibi-bubble-body::after{content:"";position:absolute;left:50%;bottom:-6px;margin-left:-5px;
+          width:0;height:0;border:5px solid transparent;border-top-color:#FFF9F1;
+          filter:drop-shadow(0 1.4px 0 #E7DCCB)}
+        @keyframes chibi-bubble-pop{
+          0%{opacity:0;scale:.6}
+          60%{opacity:1;scale:1.04}
+          100%{opacity:1;scale:1}
+        }
         .chibi-float{animation:chibi-float 1.8s ease-in-out infinite}
         @keyframes chibi-float{0%,100%{transform:translateY(0);opacity:.5}50%{transform:translateY(-4px);opacity:1}}
         @media (prefers-reduced-motion: reduce){
-          .chibi-heart,.chibi-float{animation:none}
+          .chibi-heart,.chibi-float,.chibi-bubble{animation:none}
         }
       `}</style>
     </div>
