@@ -1828,8 +1828,16 @@ export default function App() {
   };
 
   useKeyboardInset();
-  const screenRef = useRef(null);
-  useSwipeBack(screenRef, () => go("home"), tab !== "home");
+  /* useRef-ийн оронд state ашигладаг нь чухал: энэ div нь authReady
+     болон user шалгалтын ард байрладаг тул анхны render дээр огт
+     render хийгдэлгүй, зөвхөн хэсэг хугацааны дараа mount болдог.
+     useRef байсан үед element mount болоход effect дахин ажиллах баталгаа байхгүй
+     (dependency array дотор ref object өөрчлөгддөггүй тул), учир нь
+     useSwipeBack/usePullToRefresh дотоод listener хэзээ ч холбогдохгүй
+     үлдэх эрсдэлтэй байсан. setScreenEl callback ref нь element бодитоор
+     mount/unmount болох мөч бүрд дуудагддаг тул энэ асуудлыг арилгана. */
+  const [screenEl, setScreenEl] = useState(null);
+  useSwipeBack(screenEl, () => go("home"), tab !== "home");
   const [ml, setMl] = useState(saved.ml ?? 750);
   const [log, setLog] = useState(saved.log ?? [{ v: 500, t: "08:20" }, { v: 250, t: "11:05" }]);
   const [weight, setWeight] = useState(saved.weight ?? 60);
@@ -1892,7 +1900,7 @@ export default function App() {
     } catch {}
   };
 
-  const { pull, refreshing } = usePullToRefresh(screenRef, refreshAll, tab !== "chat");
+  const { pull, refreshing, settling } = usePullToRefresh(screenEl, refreshAll, tab !== "chat");
 
   useEffect(() => { const t = setTimeout(() => setBooted(true), 2950); return () => clearTimeout(t); }, []);
 
@@ -2226,14 +2234,20 @@ export default function App() {
           </div>
         ) : (
           <>
-            <div ref={screenRef}
+            <div ref={setScreenEl}
               className={`flex-1 px-5 pt-7 min-h-0 flex flex-col ${tab === "chat" ? "pb-3" : "pb-4 overflow-y-auto overscroll-contain"}`}>
               {(pull > 0 || refreshing) && (
                 <div className="flex items-center justify-center pointer-events-none shrink-0 overflow-hidden"
                   style={{
                     height: refreshing ? 34 : pull,
                     opacity: refreshing ? 1 : Math.min(1, pull / 70),
-                    transition: refreshing ? "height 180ms ease-out" : "none",
+                    /* Чирж байх явцад pull хурууны хөдөлгөөнийг шууд (transition-гүй)
+                       дагана; харин суллах мөчид (амжилттай ч бай, амжилтгүй ч
+                       бай) "settling" true болж, indicator адилхан гөлгөр
+                       анимацаар хаагдана. Өмнө нь зөвхөн refreshing үед
+                       transition идэвхтэй байсан тул threshold-д хүрэлгүй
+                       суллахад indicator нэг frame-д шидэгддэг байсан. */
+                    transition: (refreshing || settling) ? "height 180ms ease-out" : "none",
                   }}>
                   <RefreshCw size={16} strokeWidth={2.6}
                     style={{

@@ -9,13 +9,18 @@ const COMMIT_VELOCITY = 0.5;  /* px/ms — үүнээс хурдан бол за
    Хангалттай хол эсвэл хурдан бол onBack дуудагдана; эс бөгөөс байрандаа буцна.
 
    Босоо хөдөлгөөн давамгайлбал шударлагыг тэр дор нь орхино — эс бөгөөс
-   ердийн scroll хийхэд саад болно. */
-export function useSwipeBack(ref, onBack, enabled) {
+   ердийн scroll хийхэд саад болно.
+
+   Эхний аргумент нь useRef object бус, DOM элемент өөрөө байна (callback
+   ref-ээс ирсэн state). Ингэснээр элемент хожуу mount болоход
+   (жишээ нь auth шалгалтын ард нуугдсан div) dependency array дахь
+   `el`-ийн утга өөрчлөгдөж, effect дахин ажиллаж listener холбогдоно —
+   ref object-ийн identity өөрчлөгддөггүй тул энэ баталгаа байхгүй байсан. */
+export function useSwipeBack(el, onBack, enabled) {
   const backRef = useRef(onBack);
   backRef.current = onBack;
 
   useEffect(() => {
-    const el = ref.current;
     if (!el || !enabled) return;
 
     let startX = 0;
@@ -85,5 +90,5 @@ export function useSwipeBack(ref, onBack, enabled) {
       el.removeEventListener("pointercancel", onCancel);
       settle(false);
     };
-  }, [ref, enabled]);
+  }, [el, enabled]);
 }

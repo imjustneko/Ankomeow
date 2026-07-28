@@ -12,15 +12,25 @@ const DIRECTION_LOCK = 8;  /* чиглэл тодорхойлохын өмнө �
    шударлагатай зэрэг эхэлбэл) татах хөдөлгөөнийг тэр дор нь орхино —
    useSwipeBack-ийн DIRECTION_LOCK хэв маягийг дагана.
 
-   onRefresh алдаа өгвөл indicator хаагдаж, одоогийн өгөгдөл хэвээр үлдэнэ. */
-export function usePullToRefresh(ref, onRefresh, enabled) {
+   onRefresh алдаа өгвөл indicator хаагдаж, одоогийн өгөгдөл хэвээр үлдэнэ.
+
+   Эхний аргумент нь useRef object бус, DOM элемент өөрөө байна (callback
+   ref-ээс ирсэн state). Ингэснээр элемент хожуу mount болоход
+   (жишээ нь auth шалгалтын ард нуугдсан div) dependency array дахь
+   `el`-ийн утга өөрчлөгдөж, effect дахин ажиллаж listener холбогдоно —
+   ref object-ийн identity өөрчлөгддөггүй тул энэ баталгаа байхгүй байсан. */
+export function usePullToRefresh(el, onRefresh, enabled) {
   const [pull, setPull] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  /* Чирж байх явцад pull хурууны хөдөлгөөнийг шууд дагах ёстой тул
+     transition идэвхгүй байна; харин суллах мөчид (амжилттай эсвэл
+     амжилтгүй) индикатор гөлгөр анимацаар хаагдах ёстой тул тэр үед л
+     "settling"-ийг true болгож CSS transition-ыг асаана. */
+  const [settling, setSettling] = useState(false);
   const cbRef = useRef(onRefresh);
   cbRef.current = onRefresh;
 
   useEffect(() => {
-    const el = ref.current;
     if (!el || !enabled) return;
 
     let startX = 0;
@@ -56,13 +66,14 @@ export function usePullToRefresh(ref, onRefresh, enabled) {
 
       /* дээш чирэх эсвэл аль хэдийн гүйсэн бол орхино */
       if (dy <= 0 || el.scrollTop > 0) {
-        if (active) { active = false; distance = 0; setPull(0); }
+        if (active) { active = false; distance = 0; setSettling(true); setPull(0); }
         tracking = false;
         return;
       }
 
       active = true;
       distance = Math.min(MAX, dy * RESISTANCE);
+      setSettling(false);
       setPull(distance);
     };
 
@@ -70,6 +81,7 @@ export function usePullToRefresh(ref, onRefresh, enabled) {
       if (!tracking) return;
       tracking = false;
       const passed = active && distance >= THRESHOLD;
+      setSettling(true);
       setPull(0);
       distance = 0;
       active = false;
@@ -95,6 +107,7 @@ export function usePullToRefresh(ref, onRefresh, enabled) {
       horizontal = null;
       active = false;
       distance = 0;
+      setSettling(true);
       setPull(0);
     };
 
@@ -116,7 +129,7 @@ export function usePullToRefresh(ref, onRefresh, enabled) {
       setPull(0);
       setRefreshing(false);
     };
-  }, [ref, enabled]);
+  }, [el, enabled]);
 
-  return { pull, refreshing };
+  return { pull, refreshing, settling };
 }
