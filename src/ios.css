@@ -29,10 +29,18 @@ body {
 button,
 a,
 nav,
-img,
 svg {
-  /* Урт дарахад гарах Copy/Share цэс болон зураг чирэх */
+  /* Урт дарахад гарах Copy/Share цэс болон текст сонголт */
   -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+img {
+  /* img-д -webkit-touch-callout: none ХИЙХГҮЙ: чатны зураг болон gif мессежүүд
+     татаж авах товч, lightbox, share sheet зэрэггүй тул урт дараад
+     "Save Image" гаргаж авах нь хамтрагчийн илгээсэн зургийг хадгалах цорын
+     ганц арга зам. Чирэхээс сэргийлэх user-select/user-drag хэвээр үлдэнэ. */
   -webkit-user-select: none;
   user-select: none;
   -webkit-user-drag: none;
