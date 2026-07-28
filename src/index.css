@@ -1,3 +1,8 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root{
+  /* chibi таб барын дээгүүр алхана */
+  --chibi-baseline: 84px;
+}
