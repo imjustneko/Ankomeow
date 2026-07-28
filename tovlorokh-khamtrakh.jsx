@@ -1442,7 +1442,7 @@ function ChangePasswordCard() {
 }
 
 /* ── Профайл ── */
-function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, setAvatar, profileName, onBack }) {
+function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, setAvatar, profileName, chibiEnabled, setChibiEnabled, onBack }) {
   const [picking, setPicking] = useState(false);
   const fileRef = useRef(null);
   const done = items.filter((i) => i.done).length;
@@ -1531,6 +1531,30 @@ function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, 
           <div className="text-[15px] font-extrabold" style={{ color: C.ink }}>{gifCount} кадр</div>
         </Card>
       </div>
+
+      <div className="text-[13px] font-extrabold mt-4 mb-2.5" style={{ color: C.ink }}>Тохиргоо</div>
+      <Card tint="#F8F4FC">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[13px] font-extrabold mb-0.5" style={{ color: C.ink }}>Chibi хамтрагч</div>
+            <div className="text-[11.5px] font-bold leading-snug" style={{ color: C.inkSoft }}>
+              Дэлгэц дээр алхаж яваа жижиг дүр
+            </div>
+          </div>
+          <button
+            onClick={() => setChibiEnabled((v) => !v)}
+            aria-label="Chibi хамтрагчийг асаах/унтраах"
+            aria-pressed={chibiEnabled}
+            className="w-12 h-7 rounded-full shrink-0 relative active:scale-95"
+            style={{
+              background: chibiEnabled ? C.lilacDeep : C.line2,
+              transition: "background 200ms ease, transform 150ms ease",
+            }}>
+            <span className="absolute top-1 w-5 h-5 rounded-full bg-white shadow"
+              style={{ left: chibiEnabled ? 26 : 4, transition: "left 200ms cubic-bezier(.2,.8,.3,1)" }} />
+          </button>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -1856,6 +1880,10 @@ export default function App() {
   const [avatarThumb, setAvatarThumb] = useState(null);
   const [peekToast, setPeekToast] = useState(null);
   const [chibiEnabled, setChibiEnabled] = useState(() => localStorage.getItem("ankomeow-chibi-off") !== "1");
+  useEffect(() => {
+    if (chibiEnabled) localStorage.removeItem("ankomeow-chibi-off");
+    else localStorage.setItem("ankomeow-chibi-off", "1");
+  }, [chibiEnabled]);
   const [chibiHappyAt, setChibiHappyAt] = useState(null);
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
@@ -2307,7 +2335,7 @@ export default function App() {
                 {tab === "list" && <ListScreen items={items} setItems={setItems} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "screen" && <ScreenTimeScreen {...{ screenApps, screenHistory, appMin }} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} partner={partnerStats} onBack={() => go("home")} />}
-                {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, setAvatar, profileName }} gifCount={frames.length} onBack={() => go("home")} />}
+                {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, setAvatar, profileName, chibiEnabled, setChibiEnabled }} gifCount={frames.length} onBack={() => go("home")} />}
                 {tab === "partner" && <PartnerScreen partner={partnerStats} accountKey={accountKey} partnerKey={partnerKey} onBack={() => go("home")} />}
                 {tab === "chat" && <ChatScreen onBack={() => go("home")} profileName={profileName} accountKey={accountKey} partnerKey={partnerKey} />}
               </div>
