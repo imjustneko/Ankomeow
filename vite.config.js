@@ -58,4 +58,5 @@ export default defineConfig({
   base: "./",
   plugins: [react(), swPrecachePlugin()],
   server: { port: 5183 },
+  test: { environment: "node", include: ["src/**/*.test.js"] },
 });
