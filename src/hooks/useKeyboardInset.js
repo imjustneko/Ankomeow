@@ -12,13 +12,25 @@ export function useKeyboardInset() {
 
     const root = document.documentElement;
 
+    let lastInnerH = window.innerHeight;
+
     const apply = () => {
+      const innerH = window.innerHeight;
+      /* Эргэлт хийхэд layout viewport (innerHeight) өөрчлөгддөг; гар нээгдэхэд
+         өөрчлөгддөггүй. Үүгээр нь ялгаж, эргэлтийн үед өндрийн шилжилтийг
+         унтраана — эс бөгөөс системийн эргэлтийн анимацын дээр давхар
+         хоцролт мэт харагдана. */
+      const rotated = innerH !== lastInnerH;
+      lastInnerH = innerH;
+
       /* vv.offsetTop нь хуудас дээшээ гулссан хэмжээ — түүнийг хасахгүй бол
          гар нээгдэх агшинд өндөр давхар тоологдоно. */
-      const hidden = window.innerHeight - vv.height - vv.offsetTop;
+      const hidden = innerH - vv.height - vv.offsetTop;
       /* 40px-ээс бага зөрүүг гар гэж үзэхгүй — Safari-гийн хаягийн мөр
          агшиж тэлэхэд ч мөн адил зөрүү гардаг. */
       const kb = hidden > 40 ? Math.round(hidden) : 0;
+
+      root.dataset.kbAnim = rotated ? "0" : "1";
       root.style.setProperty("--kb-inset", `${kb}px`);
     };
 
@@ -30,6 +42,7 @@ export function useKeyboardInset() {
       vv.removeEventListener("resize", apply);
       vv.removeEventListener("scroll", apply);
       root.style.setProperty("--kb-inset", "0px");
+      delete root.dataset.kbAnim;
     };
   }, []);
 }

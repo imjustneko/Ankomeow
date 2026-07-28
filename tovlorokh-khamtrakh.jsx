@@ -2181,10 +2181,10 @@ export default function App() {
             max-width:100%;
             height:calc(100dvh - var(--kb-inset));
             height:calc(100svh - var(--kb-inset));
-            transition:height 180ms ease-out;
             border-radius:0;border:none;box-shadow:none;
             padding-top:env(safe-area-inset-top);
           }
+          :root[data-kb-anim="1"] .app-frame{transition:height 180ms ease-out}
           /* macOS цонхны 3 цэг нь утсан дээр notch-ны хэсэгт таарах бөгөөд утгагүй */
           .mac-dots{display:none}
           /* Доод nav болон чатны бичих мөр home indicator шугам дээр таарахгүй байх */
