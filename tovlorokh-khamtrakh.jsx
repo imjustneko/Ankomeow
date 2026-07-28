@@ -6,6 +6,7 @@ import { initializeApp } from "firebase/app";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, arrayUnion } from "firebase/firestore";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 import { pushSupported, pushPermission, requestPushToken, notifyPartner, NOTIFY_ENDPOINT } from "./src/push.js";
+import { useKeyboardInset } from "./src/hooks/useKeyboardInset.js";
 
 /* ── Firebase (хос chat) ── */
 const firebaseConfig = {
@@ -1224,6 +1225,10 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey }) {
         </button>
         <input value={text} onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && onSend()} placeholder="Мессеж бичих..."
+          onFocus={() => {
+            /* гар нээгдэж frame агшсаны дараа гулсана */
+            setTimeout(() => listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" }), 300);
+          }}
           enterKeyHint="send" autoCapitalize="sentences" autoCorrect="off"
           className="flex-1 min-w-0 rounded-full px-4 py-2.5 text-[16px] font-medium outline-none"
           style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
@@ -1811,6 +1816,8 @@ export default function App() {
   const saved = useMemo(loadSaved, []);
   const [booted, setBooted] = useState(false);
   const [tab, setTab] = useState("home");
+
+  useKeyboardInset();
   const [ml, setMl] = useState(saved.ml ?? 750);
   const [log, setLog] = useState(saved.log ?? [{ v: 500, t: "08:20" }, { v: 250, t: "11:05" }]);
   const [weight, setWeight] = useState(saved.weight ?? 60);
@@ -2130,7 +2137,9 @@ export default function App() {
           .app-shell{padding:0;min-height:100dvh;min-height:100svh}
           .app-frame{
             max-width:100%;
-            height:100dvh;height:100svh;
+            height:calc(100dvh - var(--kb-inset));
+            height:calc(100svh - var(--kb-inset));
+            transition:height 180ms ease-out;
             border-radius:0;border:none;box-shadow:none;
             padding-top:env(safe-area-inset-top);
           }
