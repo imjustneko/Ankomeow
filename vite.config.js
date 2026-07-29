@@ -75,6 +75,18 @@ function swPrecachePlugin() {
 export default defineConfig({
   base: "./",
   plugins: [react(), swPrecachePlugin()],
+  /* Firebase болон React-ыг тусад нь салгана. Аппын код өөрчлөгдөх бүрд эдгээр нь
+     дахин татагдахгүй тул давтан зочлолт бараг шууд нээгдэнэ. */
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ["react", "react-dom"],
+          firebase: ["firebase/app", "firebase/auth", "firebase/firestore"],
+        },
+      },
+    },
+  },
   server: { port: 5183 },
   test: { environment: "node", include: ["src/**/*.test.js"] },
 });
