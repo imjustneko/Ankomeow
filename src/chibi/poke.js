@@ -3,39 +3,37 @@
    Firestore болон push-ыг гаднаас функц хэлбэрээр авдаг тул энэ модуль
    Firebase-ээс бүрэн ангид — тестэд mock л хангалттай.
 
+   Throttle БАЙХГҮЙ: товшилт бүр шууд илгээгдэнэ. Урьд нь 60 секундын цонх
+   байсан бөгөөд цонх дотор хуримтлагдсан товшилтууд дараагийн товшилт
+   ирэхгүй бол мөнхөд илгээгдэхгүй үлддэг алдаатай байв.
+
    Ичих анимаци нь эндээс хамаарахгүй: UI шууд ажиллаад, энэ нь зөвхөн
-   сүлжээний талыг throttle-той хариуцна. */
+   сүлжээний талыг хариуцна. */
 
-export const POKE_THROTTLE_MS = 60000;
+import { buzzMessage } from "./buzz.js";
 
-export function pokeMessage(name, count) {
-  return count > 1 ? `${name} чамайг ${count} удаа товшлоо 💕` : `${name} чамайг товшлоо 💕`;
-}
-
-export function createPokeSender({ writeDoc, sendPush, partnerName, throttleMs = POKE_THROTTLE_MS }) {
-  let lastSentAt = -Infinity;
-  let pending = 0;
-
-  const flush = (at) => {
-    const count = pending;
-    pending = 0;
-    lastSentAt = at;
-    try {
-      Promise.resolve(writeDoc({ count })).catch(() => {});
-      Promise.resolve(sendPush({
-        title: "Ankomeow",
-        body: pokeMessage(partnerName, count),
-        tag: "poke",
-      })).catch(() => {});
-    } catch {
-      /* дуудлага өөрөө шидсэн ч UI зогсохгүй */
-    }
-  };
-
+export function createPokeSender({ writeDoc, sendPush, partnerName }) {
   return {
     poke(at) {
-      pending += 1;
-      if (at - lastSentAt >= throttleMs) flush(at);
+      /* Хоёр суваг бие биенээсээ хамаарахгүй: аль нэг нь унасан ч нөгөө нь явна. */
+      try {
+        Promise.resolve(writeDoc({ at })).catch(() => {});
+      } catch {
+        /* дуудлага өөрөө шидсэн ч UI зогсохгүй */
+      }
+
+      try {
+        Promise.resolve(sendPush({
+          title: "Ankomeow",
+          /* Товшилт бүр тусдаа илгээгддэг тул энд тоо үргэлж 1.
+             Олон тооны хувилбар нь хүлээн авах талд хэрэглэгддэг. */
+          body: buzzMessage(partnerName, 1),
+          /* Давтагдахгүй tag — эс бөгөөс шинэ мэдэгдэл хуучныг дарж бичнэ. */
+          tag: `poke-${at}`,
+        })).catch(() => {});
+      } catch {
+        /* дээрхтэй адил */
+      }
     },
   };
 }
