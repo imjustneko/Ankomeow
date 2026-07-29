@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createBrain } from "./brain.js";
+import { createBrain, GOTO_SPEED, GOTO_CLIMB_SPEED } from "./brain.js";
 import {
   SPRITE_URL, SPRITE_WIDTH, SPRITE_HEIGHT, SHEET_FACING, WALK_SHEET, WALK_ROW,
   cellPosition, gridPosition, frameFor, walkFrame,
   CHAT_SHEET, CHAT_STEPS, CHAT_SHEET_FACING,
 } from "./sprites.js";
 import { TALKATIVE, pickPhrase } from "./phrases.js";
-import { bubbleTarget } from "./chatSignal.js";
+import { bubbleTarget, walkDurationMs } from "./chatSignal.js";
 
 /* Sprite зураг ачаалагдаагүй үед харагдах энгийн орлуулагч —
    хоосон дөрвөлжин гарахаас сэргийлнэ. */
@@ -82,6 +82,9 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice, 
   const chatStepRef = useRef(null);
   const chatFacingRef = useRef(-1);
   const chatWatchdogRef = useRef(null);
+  /* Нэг chatAct.key-д дараалал ЗӨВХӨН НЭГ УДАА ажиллана — гар нээгдэж хаагдахад
+     effect дахин ажиллаж, хуучирсан бөмбөлгийн байрлал руу дахин алхахаас сэргийлнэ. */
+  const chatDoneKeyRef = useRef(null);
 
   const boxWRef = useRef(SPRITE_WIDTH);
   const walkSheetRef = useRef(null);
@@ -234,11 +237,18 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice, 
     if (!brain || !layer) return;
 
     const frame = layer.getBoundingClientRect();
-    const { x, facing } = bubbleTarget({
+    const { x, facing, visible: bubbleVisible } = bubbleTarget({
       bubble: chatAct.bubbleRect,
       frame,
       spriteWidth: SPRITE_WIDTH,
     });
+    /* Бөмбөлөг гүйлгээд дэлгэцээс гарсан бол хоосон агаар руу заах утгагүй. */
+    if (!bubbleVisible) return;
+
+    /* Энэ түлхүүрийг аль хэдийн боловсруулсан бол дахин ажиллуулахгүй. */
+    if (chatDoneKeyRef.current === chatAct.key) return;
+    chatDoneKeyRef.current = chatAct.key;
+
     chatFacingRef.current = facing;
 
     chatActiveRef.current = true;
@@ -246,13 +256,21 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice, 
     brain.walkTo(x, 0, performance.now()); /* ердийн алхах шугам дээр — босоо авирахгүй */
 
     /* Хамгаалалт: ямар нэг шалтгаанаар хүрэлт бүртгэгдэхгүй бол (жишээ нь хосын
-       товшилт goto-г таслах) chibi мөнхөд барьцаанд үлдэхгүй. */
+       товшилт goto-г таслах) chibi мөнхөд барьцаанд үлдэхгүй. Хугацааг бодит
+       зайнаас гаргана — тогтмол тоо нь алхаж дуусаагүй байхад тасалдаг. */
+    const snap = brainRef.current.snapshot();
+    const estMs = walkDurationMs({
+      fromX: snap.x, fromY: snap.y, toX: x, toY: 0,
+      speedX: GOTO_SPEED, speedY: GOTO_CLIMB_SPEED,
+    });
+    /* Хоёр дахин нөөцтэй — фрэйм алдагдах, таб нуугдах зэрэгт зай үлдээнэ. */
+    const watchdogMs = Math.max(3000, estMs * 2 + 1500);
     clearTimeout(chatWatchdogRef.current);
     chatWatchdogRef.current = setTimeout(() => {
       if (!chatActiveRef.current || chatStepRef.current !== null) return;
       chatActiveRef.current = false;
       brainRef.current?.release(performance.now());
-    }, 8000);
+    }, watchdogMs);
 
     /* Дараалал дуусаагүй байхад чатаас гарвал chibi мөнхөд хөлдөхгүй байх ёстой. */
     return () => {
@@ -416,11 +434,17 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice, 
         <div
           ref={bubbleRef}
           key={bubbleContent.key}
-          onPointerUp={(e) => { e.stopPropagation(); bubbleContent.onTap?.(); }}
-          className={`absolute chibi-bubble ${bubbleContent.onTap ? "pointer-events-auto cursor-pointer" : "pointer-events-none"}`}
+          className="absolute chibi-bubble pointer-events-none"
           style={{ bottom: "calc(var(--chibi-baseline, 84px) + 74px)", left: 0, transform: `translate3d(${heartsX}px, ${heartsY}px, 0)` }}
         >
-          <span className="chibi-bubble-body">{bubbleContent.text}</span>
+          {/* Зөвхөн харагдах бичиг нь товшигдоно — бөмбөлгийн бүтэн хайрцаг
+              доорх картуудын хүрэлтийг залгихгүй. */}
+          <span
+            className={`chibi-bubble-body ${bubbleContent.onTap ? "pointer-events-auto cursor-pointer" : ""}`}
+            onPointerUp={bubbleContent.onTap ? (e) => { e.stopPropagation(); bubbleContent.onTap(); } : undefined}
+          >
+            {bubbleContent.text}
+          </span>
         </div>
       )}
 
