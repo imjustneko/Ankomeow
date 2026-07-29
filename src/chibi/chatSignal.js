@@ -24,6 +24,18 @@ export function hasUnread(lastMsg, myReadAtMs, accountKey) {
   return created > Number(myReadAtMs);
 }
 
+/* Командын алхалт хэр удах вэ (мс). Хоёр тэнхлэг зэрэг хөдөлдөг тул
+   удаанийг нь авна. Хамгаалалтын таймер үүн дээр тулгуурлана — тогтмол
+   тоо нь эсвэл хэт богино (алхаж дуусаагүй байхад таслана), эсвэл хэт
+   урт (гацсаныг оройтож мэднэ) болно. */
+export function walkDurationMs({ fromX, fromY, toX, toY, speedX, speedY }) {
+  const dx = Math.abs(toX - fromX);
+  const dy = Math.abs(toY - fromY);
+  const tx = speedX > 0 ? (dx / speedX) * 1000 : 0;
+  const ty = speedY > 0 ? (dy / speedY) * 1000 : 0;
+  return Math.max(tx, ty);
+}
+
 /* Бөмбөлгийн доор зогсох цэгийг бодно.
 
    Оролт нь `{ left, top, width, height }` хэлбэрийн энгийн объект — DOMRect
@@ -45,5 +57,10 @@ export function bubbleTarget({ bubble, frame, spriteWidth, offset = 12 }) {
   /* Ирмэгт дарагдаад бөмбөлгийн зүүн талд үлдвэл дээш-баруун тийш заахаар толино. */
   const facing = x + spriteWidth / 2 < centreX ? 1 : -1;
 
-  return { x, facing };
+  /* Бөмбөлөг дэлгэцээс гарсан бол заах утгагүй — дуудагч дарааллыг эхлүүлэхгүй. */
+  const bTop = bubble.top - frame.top;
+  const bBottom = bTop + bubble.height;
+  const visible = bBottom > 0 && bTop < frame.height;
+
+  return { x, facing, visible };
 }

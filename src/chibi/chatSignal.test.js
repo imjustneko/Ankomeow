@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hasUnread, bubbleTarget } from "./chatSignal.js";
+import { hasUnread, bubbleTarget, walkDurationMs } from "./chatSignal.js";
 
 describe("hasUnread", () => {
   it("зурвас огт байхгүй бол худал", () => {
@@ -33,6 +33,46 @@ describe("hasUnread", () => {
 
   it("тоо биш хугацаатай зурвасыг уншаагүйд тооцохгүй", () => {
     expect(hasUnread({ sender: "andela", createdAtMs: undefined }, 1000, "neko")).toBe(false);
+  });
+
+  it("тоо болж хөрвөхгүй хугацааг уншаагүйд тооцохгүй", () => {
+    expect(hasUnread({ sender: "andela", createdAtMs: "хоосон" }, 1000, "neko")).toBe(false);
+    expect(hasUnread({ sender: "andela", createdAtMs: NaN }, 1000, "neko")).toBe(false);
+  });
+});
+
+describe("walkDurationMs", () => {
+  it("зөвхөн хэвтээ зайг хурдаараа хуваана", () => {
+    expect(walkDurationMs({
+      fromX: 0, fromY: 0, toX: 140, toY: 0, speedX: 70, speedY: 200,
+    })).toBe(2000);
+  });
+
+  it("зөвхөн босоо зайг хурдаараа хуваана", () => {
+    expect(walkDurationMs({
+      fromX: 50, fromY: 400, toX: 50, toY: 0, speedX: 70, speedY: 200,
+    })).toBe(2000);
+  });
+
+  it("хоёр тэнхлэг зэрэг хөдлөхөд удаан тэнхлэгийг буцаана", () => {
+    /* хэвтээ: 350/70 = 5с, босоо: 400/200 = 2с → 5000 */
+    expect(walkDurationMs({
+      fromX: 0, fromY: 400, toX: 350, toY: 0, speedX: 70, speedY: 200,
+    })).toBe(5000);
+  });
+
+  it("хөдлөх зайгүй бол тэг", () => {
+    expect(walkDurationMs({
+      fromX: 120, fromY: 30, toX: 120, toY: 30, speedX: 70, speedY: 200,
+    })).toBe(0);
+  });
+
+  it("хурд тэг байсан ч Infinity буюу NaN гарахгүй", () => {
+    const t = walkDurationMs({
+      fromX: 0, fromY: 0, toX: 300, toY: 200, speedX: 0, speedY: 0,
+    });
+    expect(Number.isFinite(t)).toBe(true);
+    expect(t).toBe(0);
   });
 });
 
@@ -79,5 +119,27 @@ describe("bubbleTarget", () => {
   it("offset-ыг гаднаас өгч болно", () => {
     const bubble = { left: 20, top: 300, width: 200, height: 60 };
     expect(bubbleTarget({ ...base, bubble, offset: 0 }).x).toBe(84);
+  });
+
+  it("хүрээн дотор бүтнээрээ харагдаж буй бөмбөлгийг харагдана гэнэ", () => {
+    const bubble = { left: 20, top: 300, width: 200, height: 60 };
+    expect(bubbleTarget({ ...base, bubble }).visible).toBe(true);
+  });
+
+  it("хүрээнээс дээш гарсан бөмбөлгийг харагдахгүй гэнэ", () => {
+    /* доод ирмэг нь −40 → хүрээнээс бүрэн дээш */
+    const bubble = { left: 20, top: -100, width: 200, height: 60 };
+    expect(bubbleTarget({ ...base, bubble }).visible).toBe(false);
+  });
+
+  it("хүрээнээс доош гарсан бөмбөлгийг харагдахгүй гэнэ", () => {
+    const bubble = { left: 20, top: 900, width: 200, height: 60 };
+    expect(bubbleTarget({ ...base, bubble }).visible).toBe(false);
+  });
+
+  it("дээд ирмэг дээр хагасаараа давхацсан бөмбөлгийг харагдана гэнэ", () => {
+    /* дээд ирмэг −30, доод ирмэг +30 */
+    const bubble = { left: 20, top: -30, width: 200, height: 60 };
+    expect(bubbleTarget({ ...base, bubble }).visible).toBe(true);
   });
 });
