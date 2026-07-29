@@ -486,6 +486,19 @@ describe("hold ба release", () => {
     expect(b.snapshot().x).toBe(x0);
   });
 
+  it("hold үед blush дуусаж walk төлөвт орсон ч хөдлөхгүй", () => {
+    /* poke → blush; blush дуусахад startWalk дуудагдаж walk төлөвт эргэж
+       ордог тул walk блокийн !held хаалга бодитоор шалгагдана. */
+    const b = makeBrain();
+    b.hold(0);
+    b.poke(100);
+    const x0 = b.snapshot().x;
+    for (let t = 200; t <= 5000; t += 100) b.tick(t);
+    const a = b.snapshot();
+    expect(a.state).toBe("walk");
+    expect(a.x).toBe(x0);
+  });
+
   it("hold үед poke хийсний дараа ч алхаж эхлэхгүй", () => {
     const b = makeBrain();
     b.hold(0);

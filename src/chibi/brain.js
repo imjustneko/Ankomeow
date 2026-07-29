@@ -7,6 +7,12 @@
 export const SPEED = 26; /* px/сек — хэвтээ алхааны хурд */
 export const CLIMB_SPEED = 20; /* px/сек — дээш/доош шилжих хурд */
 
+/* Командын хөдөлгөөн нь автономит тэнүүчлэлээс хурдан — чат нээсэн хүн
+   chibi-г хэдэн арван секунд хүлээх ёсгүй. Босоо нь илүү хурдан: газар
+   руу буух нь "үсрэн бууж байна" гэсэн мэдрэмж төрүүлнэ. */
+export const GOTO_SPEED = 70;        /* px/сек — хэвтээ */
+export const GOTO_CLIMB_SPEED = 200; /* px/сек — босоо */
+
 /* Дарснаас хойш энэ зайнаас их хөдөлбөл товшилт биш, чирэлт гэж үзнэ */
 export const DRAG_THRESHOLD = 6;
 
@@ -112,8 +118,8 @@ export function createBrain({ width, rise = 0, spriteWidth, rand = Math.random }
       }
 
       if (state === "goto") {
-        const stepX = (SPEED * dt) / 1000;
-        const stepY = (CLIMB_SPEED * dt) / 1000;
+        const stepX = (GOTO_SPEED * dt) / 1000;
+        const stepY = (GOTO_CLIMB_SPEED * dt) / 1000;
         const gapX = targetX - x;
         const gapY = gotoTargetY - y;
 
