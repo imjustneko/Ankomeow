@@ -950,7 +950,7 @@ export const CHAT_SHEET_FACING = -1;
 export const CHAT_STEPS = [
   { cell: CHAT_CELL.look, ms: 700 },
   { cell: CHAT_CELL.turn, ms: 250 },
-  { cell: CHAT_CELL.smile, ms: 1400 },
+  { cell: CHAT_CELL.smile, ms: 2200 },
 ];
 ```
 
