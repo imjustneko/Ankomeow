@@ -883,6 +883,14 @@ describe("чат реакцийн хуудас", () => {
     }
   });
 
+  it("нүдний хэмжээ болон renderH заагдсан", () => {
+    for (const key of ["andela", "neko"]) {
+      expect(CHAT_SHEET[key].cellW).toBeGreaterThan(0);
+      expect(CHAT_SHEET[key].cellH).toBeGreaterThan(0);
+      expect(CHAT_SHEET[key].renderH).toBeGreaterThan(0);
+    }
+  });
+
   it("нүд бүр gridPosition-оор зөв хувь буцаана", () => {
     const { cols, rows } = CHAT_SHEET.neko;
     expect(gridPosition(CHAT_CELL.look, 0, cols, rows)).toBe("0% 0%");
@@ -914,11 +922,17 @@ Expected: FAIL — `CHAT_SHEET` тодорхойлогдоогүй.
 
 ```js
 /* ── Чат реакцийн хуудас ──
+   renderH — энэ хуудсыг дэлгэц дээр хэдэн пикселийн өндрөөр зурах вэ.
+   Үндсэн хуудсын SPRITE_HEIGHT (72) биш: чат дүрүүд нүдэндээ арай бага
+   талбай эзэлдэг тул 72-оор зурвал хуучин дүрээс мэдэгдэхүйц жижиг
+   харагдана. 80 нь нүдээр тааруулсан утга — Task 7-ийн хөтөчийн шалгалтад
+   баталгаажуулна.
+
    Чат руу орох үед л ажиллах гурван дүр. Үндсэн 9 нүдийн хуудсыг хөндөхгүйн
    тулд WALK_SHEET-ийн адил тусдаа файлаар байрлана. */
 export const CHAT_SHEET = {
-  andela: { url: "/chibi/andela-chat.png", cols: 3, rows: 1, cellW: 362, cellH: 590 },
-  neko: { url: "/chibi/neko-chat.png", cols: 3, rows: 1, cellW: 328, cellH: 546 },
+  andela: { url: "/chibi/andela-chat.png", cols: 3, rows: 1, cellW: 362, cellH: 590, renderH: 80 },
+  neko: { url: "/chibi/neko-chat.png", cols: 3, rows: 1, cellW: 328, cellH: 546, renderH: 80 },
 };
 
 export const CHAT_CELL = { look: 0, turn: 1, smile: 2 };
@@ -1224,10 +1238,17 @@ rAF цикл дотор (`brainRef.current.tick(...)` дуудагддаг га�
 
 ```js
   const activeSheet = chatSheet || walkSheet;
+  /* Чат хуудас өөрийн renderH-ээр зурагдана — хуучин дүртэй ижил хэмжээтэй
+     харагдахын тулд. Бусад тохиолдолд ердийн SPRITE_HEIGHT. */
+  const spriteH = chatSheet ? chatSheet.renderH : SPRITE_HEIGHT;
   const boxW = activeSheet
-    ? Math.round((SPRITE_HEIGHT * activeSheet.cellW) / activeSheet.cellH)
+    ? Math.round((spriteH * activeSheet.cellW) / activeSheet.cellH)
     : SPRITE_WIDTH;
 ```
+
+Дараа нь sprite элементийн `style` доторх `height: SPRITE_HEIGHT` мөрийг
+`height: spriteH` болго. `bottom` нь хэвээр — хайрцаг дээшээ өснө, хөл нь
+доод шугам дээрээ үлдэнэ.
 
 **4e.** `sheet` объектод чат хуудсыг нэм. Одоо ийм байна:
 
@@ -1315,7 +1336,7 @@ Step 3-д бичсэн дарааллын effect дотор `bubbleTarget`-ий�
 мөн ав:
 
 ```js
-    const { x, y, facing } = bubbleTarget({ ... });
+    const { x, facing } = bubbleTarget({ ... });
     chatFacingRef.current = facing;
 ```
 
