@@ -99,9 +99,12 @@ export const CHAT_CELL = { look: 0, turn: 1, smile: 2 };
    scaleX-ээр толино. Зураг баруун тийш заасан бол энийг 1 болгоно. */
 export const CHAT_SHEET_FACING = -1;
 
-/* Дарааллын алхмууд: аль нүд, хэдэн мс. */
+/* Дарааллын алхмууд: аль нүд, хэдэн мс.
+   smile алхмын үргэлжлэх хугацаа (2200мс) нь зүрхний анимацийн бүтэн урттай
+   (520мс сүүлийн зүрхний delay + 1600мс нислэг ≈ 2120мс) таарч, зүрхнүүд дуусаагүй
+   байхад контейнер unmount болохоос сэргийлнэ. */
 export const CHAT_STEPS = [
   { cell: CHAT_CELL.look, ms: 700 },
   { cell: CHAT_CELL.turn, ms: 250 },
-  { cell: CHAT_CELL.smile, ms: 1400 },
+  { cell: CHAT_CELL.smile, ms: 2200 },
 ];

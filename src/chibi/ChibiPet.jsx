@@ -149,7 +149,6 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice, 
           clearTimeout(chatTimerRef.current);
           clearTimeout(chatWatchdogRef.current);
           chatActiveRef.current = false;
-          chatStepRef.current = null;
           setChatStep(null);
           brainRef.current.release(performance.now());
         }
@@ -157,7 +156,15 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice, 
         const s = brain.snapshot();
         const walkSheet = walkSheetRef.current;
         if (spriteRef.current) {
-          const chatSheet = chatSheetRef.current;
+          /* chatSheetRef/chatStepRef хоёр зөвхөн render-ийн үед хамтдаа
+             бичигддэг invariant-тай (Step 4c). rAF callback дотор эдгээрийг
+             тусад нь бичихгүй тул хоёулаа тохирч байгаа эсэхийг шалгаж
+             дефенсивээр уншина — эс бөгөөс cancel хийсний дараа React
+             дахин render хийхээс өмнөх нэг frame дээр `CHAT_STEPS[null]`
+             гэж уншиж undefined-ийн cell-ийг хандаж crash хийнэ. */
+          const chatSheet = chatSheetRef.current && chatStepRef.current !== null
+            ? chatSheetRef.current
+            : null;
           /* Чат дүр нь bubbleTarget-ийн тогтоосон зүг рүү харна — brain-ийн
              facing нь зөвхөн явж ирсэн чиглэлийг заана. */
           const flip = chatSheet
