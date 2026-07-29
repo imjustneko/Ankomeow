@@ -29,6 +29,9 @@ const CUTE_CHANCE = 0.34;
 /* Cute action гараагүй үед дээш/доош шилжих магадлал */
 const CLIMB_CHANCE = 0.35;
 
+/* Зорилтот цэгээс энэ зайд орвол хүрсэн гэж үзнэ */
+export const ARRIVE_EPSILON = 2;
+
 /* rise = дэлгэцийн ёроолын шугамаас дээш хэдэн пиксел өгсөж болох вэ.
    y нь тэр шугамаас ДЭЭШ хэмжигдэнэ: y = 0 бол доод шугам дээр. */
 export function createBrain({ width, rise = 0, spriteWidth, rand = Math.random }) {
@@ -46,6 +49,10 @@ export function createBrain({ width, rise = 0, spriteWidth, rand = Math.random }
   let lastTouch = 0;
   let cycles = 0;
   let pointer = null; /* { startClientX, startClientY, startX, startY, moved } */
+  let held = false;          /* автономит төлөв сонголт зогссон эсэх */
+  let targetX = 0;           /* walkTo-гийн зорилтот x */
+  let gotoTargetY = 0;       /* walkTo-гийн зорилтот y */
+  let arrived = false;       /* хүрсэн ба хараахан уншигдаагүй */
 
   const maxX = () => Math.max(0, frameWidth - spriteWidth);
   const maxY = () => Math.max(0, frameRise);
@@ -100,6 +107,37 @@ export function createBrain({ width, rise = 0, spriteWidth, rand = Math.random }
         dir = facing === 1 ? "right" : "left";
       }
 
+      if (state === "goto") {
+        const stepX = (SPEED * dt) / 1000;
+        const stepY = (CLIMB_SPEED * dt) / 1000;
+        const gapX = targetX - x;
+        const gapY = gotoTargetY - y;
+
+        if (Math.abs(gapX) <= stepX) x = targetX;
+        else x += Math.sign(gapX) * stepX;
+
+        if (Math.abs(gapY) <= stepY) y = gotoTargetY;
+        else y += Math.sign(gapY) * stepY;
+
+        clampX();
+        clampY();
+
+        /* Хэвтээ хөдөлгөөн нь харцны чиглэлийг тодорхойлно; хэвтээгээр
+           хүрчихсэн бол сүүлчийн чиглэлээ хадгална. */
+        if (Math.abs(gapX) > ARRIVE_EPSILON) {
+          facing = gapX > 0 ? 1 : -1;
+          dir = facing === 1 ? "right" : "left";
+        } else if (Math.abs(gapY) > ARRIVE_EPSILON) {
+          dir = gapY > 0 ? "up" : "down";
+        }
+
+        if (Math.abs(targetX - x) <= ARRIVE_EPSILON && Math.abs(gotoTargetY - y) <= ARRIVE_EPSILON) {
+          arrived = true;
+          enter("idle", at, Infinity);
+        }
+        return;
+      }
+
       if (state === "climb") {
         const step = (CLIMB_SPEED * dt) / 1000;
         const gap = targetY - y;
@@ -125,6 +163,9 @@ export function createBrain({ width, rise = 0, spriteWidth, rand = Math.random }
       }
 
       if (state === "sleep") return;
+
+      /* Дараалал явж байх үед chibi өөрөө төлөвөө сольж, унтаж болохгүй. */
+      if (held) return;
 
       if (at - lastTouch >= DUR.sleepAfter) {
         enter("sleep", at, Infinity);
@@ -216,6 +257,39 @@ export function createBrain({ width, rise = 0, spriteWidth, rand = Math.random }
     setWidth(next) {
       frameWidth = next;
       clampX();
+    },
+
+    /* ── Заасан цэг рүү явах ── */
+
+    /* Зорилтот цэг рүү алхаж эхэлнэ. Зорилтот утгыг frame дотор багтаана. */
+    walkTo(nextX, nextY, at) {
+      now = at;
+      targetX = Math.min(Math.max(nextX, 0), maxX());
+      gotoTargetY = Math.min(Math.max(nextY, 0), maxY());
+      arrived = false;
+      enter("goto", at, Infinity);
+    },
+
+    /* Хүрсэн эсэхийг НЭГ Л УДАА мэдээлнэ — дараалал давхар эхлэхээс сэргийлнэ. */
+    consumeArrival() {
+      if (!arrived) return false;
+      arrived = false;
+      return true;
+    },
+
+    /* Автономит зан зогсоно. Хүрэлт, чирэлт, poke хэвээр ажиллана. */
+    hold(at) {
+      now = at;
+      held = true;
+    },
+
+    /* Автономит зан руугаа буцна. */
+    release(at) {
+      now = at;
+      held = false;
+      arrived = false;
+      lastTouch = at; /* дарааллын үргэлжилсэн хугацаагаар шууд унтахаас сэргийлнэ */
+      startWalk(at);
     },
   };
 }

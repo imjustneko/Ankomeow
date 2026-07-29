@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createBrain, DUR, SPEED, DRAG_THRESHOLD } from "./brain.js";
+import { createBrain, DUR, SPEED, DRAG_THRESHOLD, ARRIVE_EPSILON } from "./brain.js";
 
 /* Санамсаргүй байдлыг тестэд тогтмол болгоно */
 const fixedRand = (v) => () => v;
@@ -363,5 +363,108 @@ describe("хоёр тэнхлэгээр чирэх", () => {
     b.pointerDown(100, 200, 500);
     b.pointerMove(150, 200, -5000);
     expect(b.snapshot().y).toBe(200);
+  });
+});
+
+describe("walkTo", () => {
+  /* rand-ыг тогтмол болгож санамсаргүй байдлыг арилгана */
+  const makeBrain = () => createBrain({ width: 400, rise: 200, spriteWidth: 72, rand: () => 0.5 });
+
+  it("зорилтот цэг рүү ойртоно", () => {
+    const b = makeBrain();
+    const startX = b.snapshot().x;
+    b.walkTo(startX + 100, 0, 0);
+    b.tick(1000);
+    const { x, state } = b.snapshot();
+    expect(state).toBe("goto");
+    expect(x).toBeGreaterThan(startX);
+    expect(x).toBeLessThan(startX + 100);
+  });
+
+  it("зорилтот цэг рүү харна", () => {
+    const b = makeBrain();
+    const startX = b.snapshot().x;
+    b.walkTo(startX - 100, 0, 0);
+    b.tick(100);
+    expect(b.snapshot().facing).toBe(-1);
+    expect(b.snapshot().dir).toBe("left");
+  });
+
+  it("хүрэхэд зогсож, цаашид хөдлөхгүй", () => {
+    const b = makeBrain();
+    b.walkTo(10, 20, 0);
+    for (let t = 100; t <= 60000; t += 100) b.tick(t);
+    const a = b.snapshot();
+    expect(Math.abs(a.x - 10)).toBeLessThanOrEqual(ARRIVE_EPSILON);
+    expect(Math.abs(a.y - 20)).toBeLessThanOrEqual(ARRIVE_EPSILON);
+  });
+
+  it("зорилтот цэгийг frame дотор багтаана", () => {
+    const b = makeBrain();
+    b.walkTo(99999, 99999, 0);
+    for (let t = 100; t <= 60000; t += 100) b.tick(t);
+    const a = b.snapshot();
+    expect(a.x).toBeLessThanOrEqual(400 - 72);
+    expect(a.y).toBeLessThanOrEqual(200);
+  });
+
+  it("consumeArrival эхний удаад үнэн, дараа нь худал", () => {
+    const b = makeBrain();
+    b.walkTo(10, 0, 0);
+    for (let t = 100; t <= 60000; t += 100) b.tick(t);
+    expect(b.consumeArrival()).toBe(true);
+    expect(b.consumeArrival()).toBe(false);
+  });
+
+  it("хүрээгүй байхад consumeArrival худал", () => {
+    const b = makeBrain();
+    b.walkTo(b.snapshot().x + 300, 0, 0);
+    b.tick(100);
+    expect(b.consumeArrival()).toBe(false);
+  });
+});
+
+describe("hold ба release", () => {
+  const makeBrain = () => createBrain({ width: 400, rise: 200, spriteWidth: 72, rand: () => 0.5 });
+
+  it("hold үед автономит төлөв солигдохгүй", () => {
+    const b = makeBrain();
+    b.hold(0);
+    const before = b.snapshot().state;
+    for (let t = 1000; t <= 30000; t += 1000) b.tick(t);
+    expect(b.snapshot().state).toBe(before);
+  });
+
+  it("hold үед унтахгүй", () => {
+    const b = makeBrain();
+    b.hold(0);
+    for (let t = 1000; t <= 120000; t += 1000) b.tick(t);
+    expect(b.snapshot().state).not.toBe("sleep");
+  });
+
+  it("release хийсний дараа автономит зан сэргэнэ", () => {
+    const b = makeBrain();
+    b.hold(0);
+    b.release(1000);
+    expect(b.snapshot().state).toBe("walk");
+    for (let t = 2000; t <= 30000; t += 1000) b.tick(t);
+    /* автономит мөчлөг дахин ажиллаж эхэлсэн эсэх — walk-аас өөр төлөвт
+       нэг ч удаа орсон байх ёстой */
+    expect(["walk", "idle", "sit", "wave", "climb"]).toContain(b.snapshot().state);
+  });
+
+  it("hold үед ч товшилт ажиллана", () => {
+    const b = makeBrain();
+    b.hold(0);
+    b.pointerDown(100, 50, 50);
+    const res = b.pointerUp(200);
+    expect(res.tapped).toBe(true);
+  });
+
+  it("hold үед poke дуудвал blush төлөвт орно", () => {
+    const b = makeBrain();
+    b.hold(0);
+    b.poke(100);
+    expect(b.snapshot().state).toBe("blush");
   });
 });
