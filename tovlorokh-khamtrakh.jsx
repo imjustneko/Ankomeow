@@ -2114,13 +2114,19 @@ export default function App() {
        1. chibi баярлана — `at` хугацаанд суурилсан хуучин логик хэвээр.
           Апп нээхэд хуучин товшилт байвал ч chibi баярлана.
        2. чичиргээ / iOS-ийн мэдэгдэл — `total` тоолуурын delta-д суурилна.
-          Апп нээх үеийн ПЕРВЫЙ snapshot-д ЭНЭ АЖИЛЛАХГҮЙ, эс бөгөөс өглөө бүр
-          шөнийн товшилтуудаар чичрэх болно. */
-  const firstPokeSnapRef = useRef(true);
+          Апп нээх үеийн ЭХНИЙ snapshot-д ЭНЭ АЖИЛЛАХГҮЙ, эс бөгөөс өглөө бүр
+          шөнийн товшилтуудаар чичрэх болно.
+
+          Persistent cache асаалттай тул `onSnapshot` эхлээд КЭШЛЭГДСЭН баримтаар,
+          дараа нь СЕРВЕРИЙН баримтаар дуудагдана. Тиймээс baseline-ыг зөвхөн
+          `snap.metadata.fromCache === false` үед л тогтооно — эс бөгөөс кэшийн
+          snapshot дээр baseline тогтоод, дараагийн серверийн snapshot дээр
+          "шинэ" товшилт мэт үзэж чичирнэ. */
+  const pokeBaselineReadyRef = useRef(false);
 
   useEffect(() => {
     if (!accountKey) return;
-    firstPokeSnapRef.current = true;
+    pokeBaselineReadyRef.current = false;
 
     const unsub = onSnapshot(doc(db, "rooms", CHAT_ROOM, "pokes", accountKey), (snap) => {
       const data = snap.data();
@@ -2141,8 +2147,8 @@ export default function App() {
       const prev = Number(localStorage.getItem("ankomeow-poke-total") || 0);
       localStorage.setItem("ankomeow-poke-total", String(total));
 
-      if (firstPokeSnapRef.current) {
-        firstPokeSnapRef.current = false;
+      if (!pokeBaselineReadyRef.current) {
+        if (!snap.metadata.fromCache) pokeBaselineReadyRef.current = true;
         return;
       }
 
@@ -2156,6 +2162,11 @@ export default function App() {
 
       /* iOS — Vibration API байхгүй. Системийн мэдэгдлээр нь чичрүүлнэ.
          Зөвшөөрөл байхгүй бол чимээгүй бүтэлгүйтнэ. */
+      if (document.visibilityState !== "visible") {
+        /* Апп харагдахгүй үед (дэлгэц түгжигдсэн, tab арын дэвсгэрт) sw.js
+           аль хэдийн OS мэдэгдэл харуулдаг тул давхар мэдэгдэл гаргахгүй. */
+        return;
+      }
       const name = partnerKey ? ACCOUNTS[partnerKey].name : "Хамтрагч";
       navigator.serviceWorker?.ready
         .then((reg) => reg.showNotification("Ankomeow", {
