@@ -78,6 +78,26 @@ export default defineConfig({
   /* Firebase болон React-ыг тусад нь салгана. Аппын код өөрчлөгдөх бүрд эдгээр нь
      дахин татагдахгүй тул давтан зочлолт бараг шууд нээгдэнэ. */
   build: {
+    /* Source map огт гаргахгүй — үүнгүйгээр bundle-аас эх кодыг сэргээх боломжгүй. */
+    sourcemap: false,
+    /* esbuild-ийн энгийн minify нэрийг бүрэн богиносгодоггүй тул terser ашиглана. */
+    minify: "terser",
+    terserOptions: {
+      compress: {
+        /* Production дээр console/debugger үлдэхгүй — дотоод логик задрахгүй. */
+        drop_console: true,
+        drop_debugger: true,
+        passes: 2,
+      },
+      mangle: {
+        /* Функц, хувьсагч, класс болон объектын дотоод property-нүүдийн нэрийг богиносгоно.
+           Тайлбартай нэр алга болсноор кодыг уншиж ойлгоход хэцүү болно. */
+        toplevel: true,
+      },
+      format: {
+        comments: false,
+      },
+    },
     rollupOptions: {
       output: {
         manualChunks: {
