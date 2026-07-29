@@ -98,6 +98,9 @@ self.addEventListener("push", (e) => {
     badge: "./icon-192.png",
     tag: payload.tag || "ankomeow",
     renotify: true,
+    /* Android дээр мэдэгдэл өөрөө чичрүүлнэ. iOS энэ тохиргоог үл тоомсорлодог
+       боловч системийн мэдэгдлийн тохиргоогоороо чичирнэ — алдаа гарахгүй. */
+    vibrate: [0, 40, 60, 40],
     data: { url: payload.url || "./", tab: payload.tab || "" },
   };
 
