@@ -3,8 +3,10 @@ import { createBrain } from "./brain.js";
 import {
   SPRITE_URL, SPRITE_WIDTH, SPRITE_HEIGHT, SHEET_FACING, WALK_SHEET, WALK_ROW,
   cellPosition, gridPosition, frameFor, walkFrame,
+  CHAT_SHEET, CHAT_STEPS, CHAT_SHEET_FACING,
 } from "./sprites.js";
 import { TALKATIVE, pickPhrase } from "./phrases.js";
+import { bubbleTarget } from "./chatSignal.js";
 
 /* Sprite зураг ачаалагдаагүй үед харагдах энгийн орлуулагч —
    хоосон дөрвөлжин гарахаас сэргийлнэ. */
@@ -50,7 +52,7 @@ const HEARTS = [
   { delay: 520, dx: "-7px", rot: "-6deg", size: 13, color: "#FF7FA5" },
 ];
 
-export default function ChibiPet({ character, enabled, onPoke, happyAt, notice }) {
+export default function ChibiPet({ character, enabled, onPoke, happyAt, notice, chatAct }) {
   const layerRef = useRef(null);
   const spriteRef = useRef(null);
   const heartsRef = useRef(null);
@@ -71,6 +73,15 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice }
     const t = setTimeout(() => { setNoticeShown(null); setPhrase(null); }, 5000);
     return () => clearTimeout(t);
   }, [notice?.key]);
+
+  /* Чат реакцийн дараалал: null бол ажиллахгүй, эс бөгөөс алхмын дугаар. */
+  const [chatStep, setChatStep] = useState(null);
+  const chatTimerRef = useRef(null);
+  const chatActiveRef = useRef(false);
+  const chatSheetRef = useRef(null);
+  const chatStepRef = useRef(null);
+  const chatFacingRef = useRef(-1);
+
   const boxWRef = useRef(SPRITE_WIDTH);
   const walkSheetRef = useRef(null);
   const [state, setState] = useState("walk");
@@ -127,20 +138,38 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice }
       const brain = brainRef.current;
       if (brain) {
         brain.tick(t);
+
+        if (chatActiveRef.current && brainRef.current.consumeArrival()) {
+          runChatStep(0);
+        }
+        /* Чирэлт зэрэг гадны үйлдэл goto-г таславал дараалал мөнхөд өлгөөтэй
+           үлдэхээс сэргийлнэ — брэйн goto-гоос гарсан ч хүрэлт бүртгэгдээгүй бол цуцлана. */
+        if (chatActiveRef.current && chatStepRef.current === null
+            && brainRef.current.snapshot().state !== "goto") {
+          clearTimeout(chatTimerRef.current);
+          chatActiveRef.current = false;
+          brainRef.current.release(performance.now());
+        }
+
         const s = brain.snapshot();
         const walkSheet = walkSheetRef.current;
         if (spriteRef.current) {
-          /* Алхааны хуудсанд зүүн/баруун тусад нь зурагдсан тул толин тусгал
-             хэрэггүй; позын хуудас зөвхөн нэг зүг харсан тул эргүүлнэ. */
-          const flip = walkSheet ? 1 : SHEET_FACING * s.facing;
+          const chatSheet = chatSheetRef.current;
+          /* Чат дүр нь bubbleTarget-ийн тогтоосон зүг рүү харна — brain-ийн
+             facing нь зөвхөн явж ирсэн чиглэлийг заана. */
+          const flip = chatSheet
+            ? CHAT_SHEET_FACING * chatFacingRef.current
+            : walkSheet ? 1 : SHEET_FACING * s.facing;
           /* Хуудас солигдоход өргөн өөрчлөгддөг — голыг нь байрандаа барина */
           const off = (boxWRef.current - SPRITE_WIDTH) / 2;
           spriteRef.current.style.transform =
             `translate3d(${s.x - off}px, ${-s.y}px, 0) scaleX(${flip})`;
-          spriteRef.current.style.backgroundPosition = walkSheet
-            ? gridPosition(walkFrame(s.elapsed, walkSheet), WALK_ROW[s.dir] ?? WALK_ROW.down,
-                           walkSheet.cols, walkSheet.rows)
-            : cellPosition(frameFor(s.state, s.elapsed));
+          spriteRef.current.style.backgroundPosition = chatSheet
+            ? gridPosition(CHAT_STEPS[chatStepRef.current].cell, 0, chatSheet.cols, chatSheet.rows)
+            : walkSheet
+              ? gridPosition(walkFrame(s.elapsed, walkSheet), WALK_ROW[s.dir] ?? WALK_ROW.down,
+                             walkSheet.cols, walkSheet.rows)
+              : cellPosition(frameFor(s.state, s.elapsed));
         }
         if (heartsRef.current) {
           heartsRef.current.style.transform = `translate3d(${s.x + SPRITE_WIDTH / 2}px, ${-s.y}px, 0)`;
@@ -187,6 +216,57 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice }
     setHearts((h) => h + 1);
   }, [happyAt]);
 
+  /* Чат руу орлоо — бөмбөлгийн дэргэд очиж заана. */
+  useEffect(() => {
+    if (!chatAct || !enabled) return;
+    const brain = brainRef.current;
+    const layer = layerRef.current;
+    if (!brain || !layer) return;
+
+    const frame = layer.getBoundingClientRect();
+    const { x, facing } = bubbleTarget({
+      bubble: chatAct.bubbleRect,
+      frame,
+      spriteWidth: SPRITE_WIDTH,
+    });
+    chatFacingRef.current = facing;
+
+    chatActiveRef.current = true;
+    brain.hold(performance.now());
+    brain.walkTo(x, 0, performance.now()); /* ердийн алхах шугам дээр — босоо авирахгүй */
+
+    /* Дараалал дуусаагүй байхад чатаас гарвал chibi мөнхөд хөлдөхгүй байх ёстой. */
+    return () => {
+      clearTimeout(chatTimerRef.current);
+      chatActiveRef.current = false;
+      setChatStep(null);
+      brainRef.current?.release(performance.now());
+    };
+  }, [chatAct?.key, enabled]);
+
+  /* Дүрүүдийг ээлжлүүлнэ. Сүүлийн алхамд зүрх гаргаад автономит зан руу буцна. */
+  const runChatStep = (i) => {
+    if (!chatActiveRef.current) return;
+    /* chatStepRef-ыг синхроноор бас шинэчилнэ: React-ийн re-render (тэгэхдээ
+       chatStepRef.current-ыг шинэчилдэг) rAF цикл дэх дараагийн шалгалт хүртэл
+       хойшлогддог тул зөвхөн setChatStep дуудвал энэ мөчид ref хуучин утгаараа
+       (null) үлдэж, чирэлт-цуцлах шалгалт бодит хүрэлтийг ч буруу таслана. */
+    chatStepRef.current = i;
+    setChatStep(i);
+
+    if (CHAT_STEPS[i].cell === CHAT_STEPS[CHAT_STEPS.length - 1].cell) {
+      setHearts((h) => h + 1);
+    }
+
+    clearTimeout(chatTimerRef.current);
+    chatTimerRef.current = setTimeout(() => {
+      if (i + 1 < CHAT_STEPS.length) return runChatStep(i + 1);
+      chatActiveRef.current = false;
+      setChatStep(null);
+      brainRef.current?.release(performance.now());
+    }, CHAT_STEPS[i].ms);
+  };
+
   const onPointerDown = (e) => {
     e.currentTarget.setPointerCapture?.(e.pointerId);
     brainRef.current?.pointerDown(performance.now(), e.clientX, e.clientY);
@@ -199,6 +279,15 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice }
   const onPointerUp = () => {
     const res = brainRef.current?.pointerUp(performance.now());
     if (!res?.tapped) return;
+
+    /* Хэрэглэгчийн үйлдэл анимациас давуу. */
+    if (chatActiveRef.current) {
+      clearTimeout(chatTimerRef.current);
+      chatActiveRef.current = false;
+      setChatStep(null);
+      brainRef.current?.release(performance.now());
+    }
+
     brainRef.current?.poke(performance.now());
     setHearts((h) => h + 1);
     if (character === TALKATIVE) {
@@ -231,29 +320,45 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice }
 
   /* Алхаж/өгсөж байвал 4 чиглэлийн бүтэн циклтэй хуудсыг, бусад үед позын
      хуудсыг ашиглана. Зураг ачаалагдаагүй бол орлуулагч. */
-  const walking = state === "walk" || state === "climb";
+  const walking = state === "walk" || state === "climb" || state === "goto";
   const walkSheet = !broken && walking ? WALK_SHEET[character] : null;
   walkSheetRef.current = walkSheet;
 
-  const boxW = walkSheet
-    ? Math.round((SPRITE_HEIGHT * walkSheet.cellW) / walkSheet.cellH)
+  /* Чат реакцийн дүр нь алхааны хуудаснаас давуу — дараалал зөвхөн зогссон
+     үед ажилладаг тул мөргөлдөхгүй, гэхдээ дараалал нь тодорхой байх ёстой. */
+  const chatSheet = !broken && chatStep !== null ? CHAT_SHEET[character] : null;
+  chatSheetRef.current = chatSheet;
+  chatStepRef.current = chatStep;
+
+  const activeSheet = chatSheet || walkSheet;
+  /* Чат хуудас өөрийн renderH-ээр зурагдана — хуучин дүртэй ижил хэмжээтэй
+     харагдахын тулд. Бусад тохиолдолд ердийн SPRITE_HEIGHT. */
+  const spriteH = chatSheet ? chatSheet.renderH : SPRITE_HEIGHT;
+  const boxW = activeSheet
+    ? Math.round((spriteH * activeSheet.cellW) / activeSheet.cellH)
     : SPRITE_WIDTH;
   boxWRef.current = boxW;
 
   const sheet = broken
     ? { backgroundImage: `url(${PLACEHOLDER})`, backgroundSize: "100% 100%", backgroundPosition: "0% 0%" }
-    : walkSheet
+    : chatSheet
       ? {
-          backgroundImage: `url(${walkSheet.url})`,
-          backgroundSize: `${walkSheet.cols * 100}% ${walkSheet.rows * 100}%`,
+          backgroundImage: `url(${chatSheet.url})`,
+          backgroundSize: `${chatSheet.cols * 100}% ${chatSheet.rows * 100}%`,
         }
-      : { backgroundImage: `url(${SPRITE_URL[character]})`, backgroundSize: "300% 300%" };
+      : walkSheet
+        ? {
+            backgroundImage: `url(${walkSheet.url})`,
+            backgroundSize: `${walkSheet.cols * 100}% ${walkSheet.rows * 100}%`,
+          }
+        : { backgroundImage: `url(${SPRITE_URL[character]})`, backgroundSize: "300% 300%" };
 
   return (
     <div ref={layerRef} className="absolute inset-0 z-[25] pointer-events-none overflow-hidden">
       {/* зураг ачаалагдахгүй бол орлуулагч руу шилжинэ */}
       <img src={SPRITE_URL[character]} alt="" className="hidden" onError={() => setBroken(true)} />
       {WALK_SHEET[character] && <img src={WALK_SHEET[character].url} alt="" className="hidden" />}
+      {CHAT_SHEET[character] && <img src={CHAT_SHEET[character].url} alt="" className="hidden" />}
 
       <div
         ref={spriteRef}
@@ -264,7 +369,7 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice }
         className="absolute pointer-events-auto touch-none select-none"
         style={{
           width: boxW,
-          height: SPRITE_HEIGHT,
+          height: spriteH,
           bottom: "calc(var(--chibi-baseline, 84px))",
           left: 0,
           transform: "translate3d(0,0,0)",

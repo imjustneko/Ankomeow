@@ -48,7 +48,7 @@ export function cellPosition(index) {
 
 /* Төлөв ба тухайн төлөвт орсноос хойшх хугацаанаас харагдах нүдийг олно. */
 export function frameFor(state, elapsedMs) {
-  if (state === "walk" || state === "climb") {
+  if (state === "walk" || state === "climb" || state === "goto") {
     return Math.floor(elapsedMs / WALK_FRAME_MS) % 2 === 0 ? CELL.walkA : CELL.walkB;
   }
   if (state === "land") return CELL.idle;

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { ChevronLeft, Check, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle, Bell, BellOff } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, arrayUnion, increment } from "firebase/firestore";
@@ -1033,7 +1033,7 @@ function messagePreview(payload) {
   }
 }
 
-function ChatScreen({ onBack, profileName, accountKey, partnerKey }) {
+function ChatScreen({ onBack, profileName, accountKey, partnerKey, onPartnerBubble }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [showReact, setShowReact] = useState(false);
@@ -1041,6 +1041,7 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey }) {
   const [partnerSeenAt, setPartnerSeenAt] = useState(null);
   const [reactingTo, setReactingTo] = useState(null);
   const listRef = useRef(null);
+  const lastPartnerBubbleRef = useRef(null);
   const imgFileRef = useRef(null);
 
   useEffect(() => {
@@ -1131,6 +1132,22 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey }) {
   };
 
   const lastMineId = [...messages].reverse().find((m) => m.sender === accountKey)?.id;
+  /* Хамтрагчийн хамгийн сүүлийн зурвас — chibi үүн рүү очиж заана */
+  const lastPartnerId = [...messages].reverse().find((m) => m.sender !== accountKey)?.id;
+
+  /* Зурвасын жагсаалт зурагдаж дууссаны дараа байрлалыг эцэгт өгнө.
+     requestAnimationFrame нь хоёр зорилготой:
+       1. layout тогтсоны дараа хэмжинэ (гар нээлттэй үед ч зөв),
+       2. React-д ХҮҮХДИЙН effect эцгийнхээс ӨМНӨ ажилладаг. Эцэг нь чат руу
+          орсныг rAF-гүйгээр хараахан тэмдэглээгүй байх тул анхны дуудлага
+          алдагдана. rAF нь бүх effect дууссаны дараа ажиллана.
+     Тиймээс энэ rAF-ыг энгийн дуудлага болгож "хялбарчилж" БОЛОХГҮЙ. */
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      onPartnerBubble?.(lastPartnerBubbleRef.current?.getBoundingClientRect() ?? null);
+    });
+    return () => cancelAnimationFrame(id);
+  }, [messages, onPartnerBubble]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -1153,7 +1170,8 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey }) {
                 {!mine && m.senderName && (
                   <div className="text-[9.5px] font-bold mb-1 px-1" style={{ color: C.inkSoft }}>{m.senderName}</div>
                 )}
-                <div onClick={() => setReactingTo((id) => (id === m.id ? null : m.id))}
+                <div ref={m.id === lastPartnerId ? lastPartnerBubbleRef : null}
+                  onClick={() => setReactingTo((id) => (id === m.id ? null : m.id))}
                   className={`max-w-[75%] rounded-[18px] text-[13px] font-semibold cursor-pointer ${media ? "p-1.5" : "px-3.5 py-2.5"}`}
                   style={{
                     background: mine ? C.lilacDeep : C.card, color: mine ? "#fff" : C.ink,
@@ -1924,6 +1942,24 @@ export default function App() {
   const [myReadAtMs, setMyReadAtMs] = useState(null);
   const [readsLoaded, setReadsLoaded] = useState(false); /* "уншсан" listener анх удаа ирсэн эсэх */
   const [chatNotice, setChatNotice] = useState(null); /* { text, key, onTap } */
+  const [chatAct, setChatAct] = useState(null); /* { key, bubbleRect } */
+  const chatActKeyRef = useRef(0);
+
+  /* Чат руу орох бүрд дараалал нэг л удаа эхэлнэ. Дараагийн удаа орох хүртэл
+     дахин эхлэхгүй — chatActArmedRef нь энэ хаалгыг барина. */
+  const chatActArmedRef = useRef(false);
+
+  useEffect(() => {
+    chatActArmedRef.current = tab === "chat";
+    if (tab !== "chat") setChatAct(null);
+  }, [tab]);
+
+  const handlePartnerBubble = useCallback((rect) => {
+    if (!chatActArmedRef.current || !rect) return;
+    chatActArmedRef.current = false; /* нэг л удаа */
+    chatActKeyRef.current += 1;
+    setChatAct({ key: chatActKeyRef.current, bubbleRect: rect });
+  }, []);
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [screenApps, setScreenApps] = useState(saved.screenApps ?? []);
@@ -2456,6 +2492,7 @@ export default function App() {
             enabled={chibiEnabled}
             happyAt={chibiHappyAt}
             notice={chatNotice}
+            chatAct={chatAct}
             onPoke={() => pokeSender?.poke(Date.now())}
           />
         )}
@@ -2518,7 +2555,7 @@ export default function App() {
                 {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, setAvatar, profileName, chibiEnabled, setChibiEnabled }} gifCount={frames.length} onBack={() => go("home")} />}
                 {tab === "partner" && <PartnerScreen partner={partnerStats} accountKey={accountKey} partnerKey={partnerKey} onBack={() => go("home")} />}
-                {tab === "chat" && <ChatScreen onBack={() => go("home")} profileName={profileName} accountKey={accountKey} partnerKey={partnerKey} />}
+                {tab === "chat" && <ChatScreen onBack={() => go("home")} profileName={profileName} accountKey={accountKey} partnerKey={partnerKey} onPartnerBubble={handlePartnerBubble} />}
               </div>
             </div>
 
