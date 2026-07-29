@@ -1,14 +1,8 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "../tovlorokh-khamtrakh.jsx";
-import { enforceHostLock } from "./guard.js";
 import "./index.css";
 import "./ios.css";
-
-/* Хуулсан хуулбарыг өөр хаяг дээр ажиллуулахаас сэргийлнэ. */
-if (!enforceHostLock()) {
-  throw new Error("host not allowed");
-}
 
 window.addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();
