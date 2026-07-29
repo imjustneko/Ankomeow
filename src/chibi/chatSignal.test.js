@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hasUnread } from "./chatSignal.js";
+import { hasUnread, bubbleTarget } from "./chatSignal.js";
 
 describe("hasUnread", () => {
   it("зурвас огт байхгүй бол худал", () => {
@@ -29,5 +29,46 @@ describe("hasUnread", () => {
 
   it("хугацаа нь тодорхойгүй зурвасыг уншаагүйд тооцохгүй", () => {
     expect(hasUnread({ sender: "andela", createdAtMs: null }, 1000, "neko")).toBe(false);
+  });
+});
+
+describe("bubbleTarget", () => {
+  /* 400px өргөнтэй frame, 72px өргөнтэй chibi */
+  const frame = { left: 0, top: 0, width: 400, height: 800 };
+  const base = { frame, spriteWidth: 72 };
+
+  it("бөмбөлгийн голын доор, багахан баруун тийш шилжиж зогсоно", () => {
+    /* бөмбөлгийн гол = 120; 120 − 36 + 12 = 96 */
+    const bubble = { left: 20, top: 300, width: 200, height: 60 };
+    expect(bubbleTarget({ ...base, bubble }).x).toBe(96);
+  });
+
+  it("бөмбөлгөөс баруун тийш шилжсэн тул зурсан хэвээр заана", () => {
+    const bubble = { left: 20, top: 300, width: 200, height: 60 };
+    expect(bubbleTarget({ ...base, bubble }).facing).toBe(-1);
+  });
+
+  it("баруун ирмэгт дарагдвал frame дотор багтана", () => {
+    const bubble = { left: 300, top: 300, width: 100, height: 60 };
+    const t = bubbleTarget({ ...base, bubble });
+    expect(t.x).toBe(400 - 72);
+  });
+
+  it("зүүн ирмэгт дарагдаж бөмбөлгийн зүүн талд үлдвэл толино", () => {
+    const bubble = { left: 0, top: 300, width: 60, height: 60 };
+    const t = bubbleTarget({ ...base, bubble });
+    expect(t.x).toBe(0);
+    expect(t.facing).toBe(1);
+  });
+
+  it("frame шилжсэн байрлалтай байсан ч харьцангуй утга буцаана", () => {
+    const shifted = { left: 100, top: 50, width: 400, height: 800 };
+    const bubble = { left: 120, top: 350, width: 200, height: 60 };
+    expect(bubbleTarget({ ...base, frame: shifted, bubble }).x).toBe(96);
+  });
+
+  it("offset-ыг гаднаас өгч болно", () => {
+    const bubble = { left: 20, top: 300, width: 200, height: 60 };
+    expect(bubbleTarget({ ...base, bubble, offset: 0 }).x).toBe(84);
   });
 });
