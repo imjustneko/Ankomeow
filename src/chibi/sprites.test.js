@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { CELL, cellPosition, frameFor, SPRITE_URL } from "./sprites.js";
+import { CELL, cellPosition, frameFor, SPRITE_URL, CHAT_SHEET, CHAT_CELL, CHAT_STEPS, gridPosition } from "./sprites.js";
 
 describe("cellPosition", () => {
   it("эхний нүд зүүн дээд буланд байрлана", () => {
@@ -42,5 +42,45 @@ describe("SPRITE_URL", () => {
   it("хоёр дүрийн зам public/chibi доторх файлыг заана", () => {
     expect(SPRITE_URL.andela).toBe("/chibi/andela.png");
     expect(SPRITE_URL.neko).toBe("/chibi/neko.png");
+  });
+});
+
+describe("чат реакцийн хуудас", () => {
+  it("хоёр дүрд хоёулаа хуудастай", () => {
+    expect(CHAT_SHEET.andela).toBeTruthy();
+    expect(CHAT_SHEET.neko).toBeTruthy();
+  });
+
+  it("гурван нүдтэй нэг мөр", () => {
+    for (const key of ["andela", "neko"]) {
+      expect(CHAT_SHEET[key].cols).toBe(3);
+      expect(CHAT_SHEET[key].rows).toBe(1);
+    }
+  });
+
+  it("нүдний хэмжээ болон renderH заагдсан", () => {
+    for (const key of ["andela", "neko"]) {
+      expect(CHAT_SHEET[key].cellW).toBeGreaterThan(0);
+      expect(CHAT_SHEET[key].cellH).toBeGreaterThan(0);
+      expect(CHAT_SHEET[key].renderH).toBeGreaterThan(0);
+    }
+  });
+
+  it("нүд бүр gridPosition-оор зөв хувь буцаана", () => {
+    const { cols, rows } = CHAT_SHEET.neko;
+    expect(gridPosition(CHAT_CELL.look, 0, cols, rows)).toBe("0% 0%");
+    expect(gridPosition(CHAT_CELL.turn, 0, cols, rows)).toBe("50% 0%");
+    expect(gridPosition(CHAT_CELL.smile, 0, cols, rows)).toBe("100% 0%");
+  });
+
+  it("дараалал гурван алхамтай бөгөөд эерэг хугацаатай", () => {
+    expect(CHAT_STEPS).toHaveLength(3);
+    for (const step of CHAT_STEPS) {
+      expect(step.ms).toBeGreaterThan(0);
+    }
+  });
+
+  it("дарааллын алхмууд look → turn → smile дараалалтай", () => {
+    expect(CHAT_STEPS.map((s) => s.cell)).toEqual([CHAT_CELL.look, CHAT_CELL.turn, CHAT_CELL.smile]);
   });
 });

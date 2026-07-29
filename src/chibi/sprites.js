@@ -78,3 +78,30 @@ export function gridPosition(col, row, cols, rows) {
 export function walkFrame(elapsedMs, sheet) {
   return Math.floor(Math.max(0, elapsedMs) / sheet.frameMs) % sheet.cols;
 }
+
+/* ── Чат реакцийн хуудас ──
+   renderH — энэ хуудсыг дэлгэц дээр хэдэн пикселийн өндрөөр зурах вэ.
+   Үндсэн хуудсын SPRITE_HEIGHT (72) биш: чат дүрүүд нүдэндээ арай бага
+   талбай эзэлдэг тул 72-оор зурвал хуучин дүрээс мэдэгдэхүйц жижиг
+   харагдана. 80 нь нүдээр тааруулсан утга — Task 7-ийн хөтөчийн шалгалтад
+   баталгаажуулна.
+
+   Чат руу орох үед л ажиллах гурван дүр. Үндсэн 9 нүдийн хуудсыг хөндөхгүйн
+   тулд WALK_SHEET-ийн адил тусдаа файлаар байрлана. */
+export const CHAT_SHEET = {
+  andela: { url: "/chibi/andela-chat.png", cols: 3, rows: 1, cellW: 362, cellH: 590, renderH: 80 },
+  neko: { url: "/chibi/neko-chat.png", cols: 3, rows: 1, cellW: 328, cellH: 546, renderH: 80 },
+};
+
+export const CHAT_CELL = { look: 0, turn: 1, smile: 2 };
+
+/* Зурсан дүр зүүн тийш заасан. Баруун тийш заах шаардлагатай үед код
+   scaleX-ээр толино. Зураг баруун тийш заасан бол энийг 1 болгоно. */
+export const CHAT_SHEET_FACING = -1;
+
+/* Дарааллын алхмууд: аль нүд, хэдэн мс. */
+export const CHAT_STEPS = [
+  { cell: CHAT_CELL.look, ms: 700 },
+  { cell: CHAT_CELL.turn, ms: 250 },
+  { cell: CHAT_CELL.smile, ms: 1400 },
+];
