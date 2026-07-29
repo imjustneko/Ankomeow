@@ -81,6 +81,7 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice, 
   const chatSheetRef = useRef(null);
   const chatStepRef = useRef(null);
   const chatFacingRef = useRef(-1);
+  const chatWatchdogRef = useRef(null);
 
   const boxWRef = useRef(SPRITE_WIDTH);
   const walkSheetRef = useRef(null);
@@ -142,12 +143,14 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice, 
         if (chatActiveRef.current && brainRef.current.consumeArrival()) {
           runChatStep(0);
         }
-        /* Чирэлт зэрэг гадны үйлдэл goto-г таславал дараалал мөнхөд өлгөөтэй
-           үлдэхээс сэргийлнэ — брэйн goto-гоос гарсан ч хүрэлт бүртгэгдээгүй бол цуцлана. */
-        if (chatActiveRef.current && chatStepRef.current === null
-            && brainRef.current.snapshot().state !== "goto") {
+        /* Хэрэглэгч чирвэл дараалал тэр дор нь цуцална — алхаж байгаа ч, дүр
+           тоглож байгаа ч ялгаагүй. Брэйн энэ үед held-ээ өөрөө цуцалсан байна. */
+        if (chatActiveRef.current && brainRef.current.snapshot().state === "dragged") {
           clearTimeout(chatTimerRef.current);
+          clearTimeout(chatWatchdogRef.current);
           chatActiveRef.current = false;
+          chatStepRef.current = null;
+          setChatStep(null);
           brainRef.current.release(performance.now());
         }
 
@@ -218,7 +221,7 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice, 
 
   /* Чат руу орлоо — бөмбөлгийн дэргэд очиж заана. */
   useEffect(() => {
-    if (!chatAct || !enabled) return;
+    if (!chatAct || !enabled || !visible) return;
     const brain = brainRef.current;
     const layer = layerRef.current;
     if (!brain || !layer) return;
@@ -235,18 +238,29 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice, 
     brain.hold(performance.now());
     brain.walkTo(x, 0, performance.now()); /* ердийн алхах шугам дээр — босоо авирахгүй */
 
+    /* Хамгаалалт: ямар нэг шалтгаанаар хүрэлт бүртгэгдэхгүй бол (жишээ нь хосын
+       товшилт goto-г таслах) chibi мөнхөд барьцаанд үлдэхгүй. */
+    clearTimeout(chatWatchdogRef.current);
+    chatWatchdogRef.current = setTimeout(() => {
+      if (!chatActiveRef.current || chatStepRef.current !== null) return;
+      chatActiveRef.current = false;
+      brainRef.current?.release(performance.now());
+    }, 8000);
+
     /* Дараалал дуусаагүй байхад чатаас гарвал chibi мөнхөд хөлдөхгүй байх ёстой. */
     return () => {
       clearTimeout(chatTimerRef.current);
+      clearTimeout(chatWatchdogRef.current);
       chatActiveRef.current = false;
       setChatStep(null);
       brainRef.current?.release(performance.now());
     };
-  }, [chatAct?.key, enabled]);
+  }, [chatAct?.key, enabled, visible]);
 
   /* Дүрүүдийг ээлжлүүлнэ. Сүүлийн алхамд зүрх гаргаад автономит зан руу буцна. */
   const runChatStep = (i) => {
     if (!chatActiveRef.current) return;
+    clearTimeout(chatWatchdogRef.current); /* хүрэлт болсон — хамгаалалт хэрэггүй болсон */
     /* chatStepRef-ыг синхроноор бас шинэчилнэ: React-ийн re-render (тэгэхдээ
        chatStepRef.current-ыг шинэчилдэг) rAF цикл дэх дараагийн шалгалт хүртэл
        хойшлогддог тул зөвхөн setChatStep дуудвал энэ мөчид ref хуучин утгаараа
@@ -254,7 +268,7 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice, 
     chatStepRef.current = i;
     setChatStep(i);
 
-    if (CHAT_STEPS[i].cell === CHAT_STEPS[CHAT_STEPS.length - 1].cell) {
+    if (i === CHAT_STEPS.length - 1) {
       setHearts((h) => h + 1);
     }
 
@@ -283,6 +297,7 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice, 
     /* Хэрэглэгчийн үйлдэл анимациас давуу. */
     if (chatActiveRef.current) {
       clearTimeout(chatTimerRef.current);
+      clearTimeout(chatWatchdogRef.current);
       chatActiveRef.current = false;
       setChatStep(null);
       brainRef.current?.release(performance.now());
@@ -402,7 +417,7 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice, 
         </div>
       )}
 
-      {(state === "blush" || state === "happy") && (
+      {(state === "blush" || state === "happy" || chatStep === CHAT_STEPS.length - 1) && (
         <div
           ref={heartsRef}
           key={hearts}
