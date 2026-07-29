@@ -50,7 +50,7 @@ const HEARTS = [
   { delay: 520, dx: "-7px", rot: "-6deg", size: 13, color: "#FF7FA5" },
 ];
 
-export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
+export default function ChibiPet({ character, enabled, onPoke, happyAt, notice }) {
   const layerRef = useRef(null);
   const spriteRef = useRef(null);
   const heartsRef = useRef(null);
@@ -58,6 +58,17 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
   const rafRef = useRef(0);
   const bubbleRef = useRef(null);
   const [phrase, setPhrase] = useState(null); /* { text, key } — товшиход гарах үг */
+
+  /* Гаднаас өгсөн мэдэгдэл (жишээ нь «Чат ирсэн байна»). Санамсаргүй үгсээс
+     ялгаатай нь дүрээс үл хамааран, blush төлөвгүйгээр ч харагдана. */
+  const [noticeShown, setNoticeShown] = useState(null);
+
+  useEffect(() => {
+    if (!notice) return setNoticeShown(null);
+    setNoticeShown(notice);
+    const t = setTimeout(() => setNoticeShown(null), 5000);
+    return () => clearTimeout(t);
+  }, [notice?.key]);
   const boxWRef = useRef(SPRITE_WIDTH);
   const walkSheetRef = useRef(null);
   const [state, setState] = useState("walk");
@@ -207,6 +218,14 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
   const heartsX = (heartsSnap?.x ?? 0) + SPRITE_WIDTH / 2;
   const heartsY = -(heartsSnap?.y ?? 0);
 
+  /* Бөмбөлгийн агуулга: мэдэгдэл нь санамсаргүй үгнээс давуу. `key` нь
+     дахин mount хийлгэж анимацийг эхнээс нь тоглуулна. */
+  const bubbleContent = noticeShown
+    ? { text: noticeShown.text, key: `notice-${noticeShown.key}`, onTap: noticeShown.onTap }
+    : phrase && state === "blush"
+      ? { text: phrase.text, key: `phrase-${phrase.key}`, onTap: null }
+      : null;
+
   /* Алхаж/өгсөж байвал 4 чиглэлийн бүтэн циклтэй хуудсыг, бусад үед позын
      хуудсыг ашиглана. Зураг ачаалагдаагүй бол орлуулагч. */
   const walking = state === "walk" || state === "climb";
@@ -263,14 +282,15 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt }) {
         )}
       </div>
 
-      {phrase && state === "blush" && (
+      {bubbleContent && (
         <div
           ref={bubbleRef}
-          key={phrase.key}
-          className="absolute pointer-events-none chibi-bubble"
+          key={bubbleContent.key}
+          onPointerUp={(e) => { e.stopPropagation(); bubbleContent.onTap?.(); }}
+          className={`absolute chibi-bubble ${bubbleContent.onTap ? "pointer-events-auto cursor-pointer" : "pointer-events-none"}`}
           style={{ bottom: "calc(var(--chibi-baseline, 84px) + 74px)", left: 0, transform: `translate3d(${heartsX}px, ${heartsY}px, 0)` }}
         >
-          <span className="chibi-bubble-body">{phrase.text}</span>
+          <span className="chibi-bubble-body">{bubbleContent.text}</span>
         </div>
       )}
 

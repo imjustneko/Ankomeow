@@ -9,6 +9,7 @@ import { useSwipeBack } from "./src/hooks/useSwipeBack.js";
 import { usePullToRefresh } from "./src/hooks/usePullToRefresh.js";
 import ChibiPet from "./src/chibi/ChibiPet.jsx";
 import { createPokeSender } from "./src/chibi/poke.js";
+import { hasUnread } from "./src/chibi/chatSignal.js";
 import { vibrationPattern, canVibrate, buzzMessage, shouldBuzz } from "./src/chibi/buzz.js";
 
 /* ── Firebase (хос chat) ── */
@@ -1722,7 +1723,7 @@ function LoginScreen() {
 }
 
 /* ── Нүүр ── */
-function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar, profileName, screenApps, appMin, partner, partnerName, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
+function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justReset, avatar, profileName, screenApps, appMin, partner, partnerName, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
   const now = new Date();
   const greet = (clock.h < 11 ? "Өглөөний мэнд" : clock.h < 18 ? "Өдрийн мэнд" : "Оройн мэнд") + (profileName ? `, ${profileName}` : "");
   const done = items.filter((i) => i.done).length;
@@ -1841,12 +1842,19 @@ function HomeScreen({ go, ml, goal, items, gifCount, clock, justReset, avatar, p
 
       <Card tint="#F8F4FC" className="mb-3" onClick={() => go("chat")}>
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: C.lilacDeep }}>
+          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 relative" style={{ background: C.lilacDeep }}>
             <MessageCircle size={17} strokeWidth={2.2} color="#fff" />
+            {/* Уншаагүй зурвасын тэмдэг */}
+            {chatUnread && (
+              <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full"
+                style={{ background: C.peachDeep, border: "2px solid #F8F4FC" }} />
+            )}
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Чат</div>
-            <div className="text-[11.5px] truncate font-medium" style={{ color: C.inkSoft }}>Хайртай хүнтэйгээ шууд бичих</div>
+            <div className="text-[11.5px] truncate font-medium" style={{ color: C.inkSoft }}>
+              {chatUnread ? "Шинэ зурвас ирсэн байна" : "Хайртай хүнтэйгээ шууд бичих"}
+            </div>
           </div>
         </div>
       </Card>
@@ -1912,6 +1920,9 @@ export default function App() {
     else localStorage.setItem("ankomeow-chibi-off", "1");
   }, [chibiEnabled]);
   const [chibiHappyAt, setChibiHappyAt] = useState(null);
+  const [lastMsg, setLastMsg] = useState(null);       /* { sender, createdAtMs } */
+  const [myReadAtMs, setMyReadAtMs] = useState(null);
+  const [chatNotice, setChatNotice] = useState(null); /* { text, key, onTap } */
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [screenApps, setScreenApps] = useState(saved.screenApps ?? []);
@@ -2107,6 +2118,50 @@ export default function App() {
         notifyPartner(auth, { to: partnerKey, title, body, tag, tab: "home" }),
     });
   }, [accountKey, partnerKey]);
+
+  /* Хамгийн сүүлийн зурвасыг л сонсоно — нэг баримт тул хөнгөн. */
+  useEffect(() => {
+    if (!accountKey) return;
+    const q = query(collection(db, "rooms", CHAT_ROOM, "messages"), orderBy("createdAt", "desc"), limit(1));
+    const unsub = onSnapshot(q, (snap) => {
+      const d = snap.docs[0];
+      if (!d) return setLastMsg(null);
+      const data = d.data();
+      setLastMsg({ sender: data.sender, createdAtMs: data.createdAt?.toMillis?.() ?? null });
+    }, () => {});
+    return unsub;
+  }, [accountKey]);
+
+  /* Өөрийн уншсан хугацаа */
+  useEffect(() => {
+    if (!accountKey) return;
+    const unsub = onSnapshot(doc(db, "rooms", CHAT_ROOM, "reads", accountKey), (snap) => {
+      setMyReadAtMs(snap.data()?.at?.toMillis?.() ?? null);
+    }, () => {});
+    return unsub;
+  }, [accountKey]);
+
+  const chatUnread = hasUnread(lastMsg, myReadAtMs, accountKey);
+
+  /* «Уншаагүй биш» → «уншаагүй» болж шилжих агшинд бөмбөлөг нэг удаа гарна.
+     Уншаагүй төлөв үргэлжилсэн ч давтан гарахгүй — nav дээрх цэг л үлдэнэ. */
+  const prevUnreadRef = useRef(false);
+  const noticeKeyRef = useRef(0);
+
+  useEffect(() => {
+    const was = prevUnreadRef.current;
+    prevUnreadRef.current = chatUnread;
+
+    if (!chatUnread) return setChatNotice(null);
+    if (was) return; /* аль хэдийн уншаагүй байсан — дахин гаргахгүй */
+
+    noticeKeyRef.current += 1;
+    setChatNotice({
+      text: "Чат ирсэн байна 💌",
+      key: noticeKeyRef.current,
+      onTap: () => go("chat"),
+    });
+  }, [chatUnread]);
 
   /* Хос миний chibi-г товшлоо.
 
@@ -2389,6 +2444,7 @@ export default function App() {
             character={partnerKey}
             enabled={chibiEnabled}
             happyAt={chibiHappyAt}
+            notice={chatNotice}
             onPoke={() => pokeSender?.poke(Date.now())}
           />
         )}
@@ -2444,7 +2500,7 @@ export default function App() {
                 </div>
               )}
               <div key={tab} className={`${navDir === "back" ? "scr-back" : "scr-in"} ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
-                {tab === "home" && <HomeScreen go={go} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} />}
+                {tab === "home" && <HomeScreen go={go} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} chatUnread={chatUnread} />}
                 {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "list" && <ListScreen items={items} setItems={setItems} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "screen" && <ScreenTimeScreen {...{ screenApps, screenHistory, appMin }} partner={partnerStats} onBack={() => go("home")} />}
