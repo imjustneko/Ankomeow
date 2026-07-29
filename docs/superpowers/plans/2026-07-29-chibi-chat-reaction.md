@@ -182,17 +182,22 @@ describe("bubbleTarget", () => {
     expect(bubbleTarget({ ...base, bubble }).facing).toBe(-1);
   });
 
-  it("баруун ирмэгт дарагдвал frame дотор багтана", () => {
-    const bubble = { left: 300, top: 300, width: 100, height: 60 };
+  it("баруун ирмэгт дарагдвал frame дотор багтаж, толигдоно", () => {
+    /* гол = 370, хүссэн x = 346 > maxX(328) тул 328 дээр таслагдана.
+       Chibi бөмбөлгийн голоос ЗҮҮН талд үлдсэн тул дээш-баруун тийш заана. */
+    const bubble = { left: 340, top: 300, width: 60, height: 60 };
     const t = bubbleTarget({ ...base, bubble });
     expect(t.x).toBe(400 - 72);
+    expect(t.facing).toBe(1);
   });
 
-  it("зүүн ирмэгт дарагдаж бөмбөлгийн зүүн талд үлдвэл толино", () => {
-    const bubble = { left: 0, top: 300, width: 60, height: 60 };
+  it("зүүн ирмэгт дарагдвал 0 дээр зогсож, зурсан хэвээр заана", () => {
+    /* гол = 15, хүссэн x = −9 < 0 тул 0 дээр таслагдана.
+       Chibi бөмбөлгийн голоос БАРУУН талд байгаа тул зурсан хэвээр (дээш-зүүн). */
+    const bubble = { left: 0, top: 300, width: 30, height: 60 };
     const t = bubbleTarget({ ...base, bubble });
     expect(t.x).toBe(0);
-    expect(t.facing).toBe(1);
+    expect(t.facing).toBe(-1);
   });
 
   it("frame шилжсэн байрлалтай байсан ч харьцангуй утга буцаана", () => {
