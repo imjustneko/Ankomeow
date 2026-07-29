@@ -3,7 +3,10 @@
      VITE_VAPID_KEY        — Firebase Console → Project settings → Cloud Messaging → Web Push certificates
      VITE_NOTIFY_ENDPOINT  — Vercel дээрх функцийн хаяг, ж: https://ankomeow-notify.vercel.app/api/notify */
 
-import { getMessaging, getToken, isSupported } from "firebase/messaging";
+/* firebase/messaging нь ~70KB бөгөөд зөвхөн push тохируулах үед хэрэгтэй.
+   Статикаар импортловол эхний ачаалалтын шаталсан замд орно — тиймээс динамикаар татна. */
+let messagingModPromise = null;
+const messagingMod = () => (messagingModPromise ||= import("firebase/messaging"));
 
 export const VAPID_KEY = import.meta.env.VITE_VAPID_KEY || "";
 export const NOTIFY_ENDPOINT = import.meta.env.VITE_NOTIFY_ENDPOINT || "";
@@ -17,6 +20,7 @@ export const isStandalone = () =>
 export async function pushSupported() {
   if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) return false;
   try {
+    const { isSupported } = await messagingMod();
     return await isSupported();
   } catch {
     return false;
@@ -45,6 +49,7 @@ export async function requestPushToken(fbApp) {
   if (!(await pushSupported())) throw new Error("Энэ хөтөч push мэдэгдэл дэмжихгүй");
 
   const registration = await navigator.serviceWorker.ready;
+  const { getMessaging, getToken } = await messagingMod();
   const messaging = getMessaging(fbApp);
   const token = await getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: registration });
   return token || null;

@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { ChevronLeft, Check, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle, Bell, BellOff } from "lucide-react";
-import GIF from "gif.js";
-import gifWorkerUrl from "gif.js/dist/gif.worker.js?url";
 import { initializeApp } from "firebase/app";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, arrayUnion } from "firebase/firestore";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
@@ -793,6 +791,19 @@ function ScreenTimeScreen({ screenApps, screenHistory, appMin, partner, onBack }
   );
 }
 
+/* gif.js нь зөвхөн "GIF болгож хадгалах" үед хэрэгтэй ~60KB сан. Дээд талд нь
+   статикаар импортлохгүй — товч дарсан үед л татаж, дараа нь дахин ашиглана. */
+let gifLibPromise = null;
+const loadGifLib = () => {
+  if (!gifLibPromise) {
+    gifLibPromise = Promise.all([
+      import("gif.js"),
+      import("gif.js/dist/gif.worker.js?url"),
+    ]).then(([mod, worker]) => ({ GIF: mod.default, workerUrl: worker.default }));
+  }
+  return gifLibPromise;
+};
+
 /* ── GIF ── */
 function GifScreen({ frames, setFrames, partner, onBack }) {
   const [playing, setPlaying] = useState(true);
@@ -817,15 +828,16 @@ function GifScreen({ frames, setFrames, partner, onBack }) {
     setSaving(true);
     setSaveProgress(0);
     const W = 480, H = 360;
-    Promise.all(
-      activeFrames.map((f) => new Promise((resolve, reject) => {
+    Promise.all([
+      loadGifLib(),
+      ...activeFrames.map((f) => new Promise((resolve, reject) => {
         const img = new Image();
         img.onload = () => resolve(img);
         img.onerror = reject;
         img.src = f.url;
-      }))
-    ).then((imgs) => {
-      const gif = new GIF({ workers: 2, quality: 10, width: W, height: H, workerScript: gifWorkerUrl });
+      })),
+    ]).then(([{ GIF, workerUrl }, ...imgs]) => {
+      const gif = new GIF({ workers: 2, quality: 10, width: W, height: H, workerScript: workerUrl });
       imgs.forEach((img) => {
         const canvas = document.createElement("canvas");
         canvas.width = W;
