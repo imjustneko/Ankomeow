@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { createHash } from "node:crypto";
-import { readFile, readdir, writeFile } from "node:fs/promises";
+import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 /* Build-ийн дараа sw.js дотор precache жагсаалт болон хувилбарын хэшийг сольж бичнэ.
@@ -30,6 +30,23 @@ function swPrecachePlugin() {
         assets = (await readdir(path.resolve(outDir, "assets"))).map((f) => "./assets/" + f);
       } catch {}
 
+      /* img/ доторх зургууд нийтдээ ~1.1MB. Бүгдийг precache хийвэл SW суулгах
+         явц хүндэрнэ. Тиймээс зөвхөн бүрхүүлд шаардлагатай жижиг зургуудыг (лого,
+         nav icon) урьдчилан хадгална — үлдсэн нь эхэлж үзсэн хойноо runtime-д кэшлэгдэнэ. */
+      const PRECACHE_IMG_MAX = 10 * 1024;
+      let images = [];
+      try {
+        const imgDir = path.resolve(outDir, "img");
+        const names = await readdir(imgDir);
+        const picked = await Promise.all(
+          names.map(async (f) => {
+            const { size } = await stat(path.join(imgDir, f));
+            return size <= PRECACHE_IMG_MAX ? "./img/" + f : null;
+          })
+        );
+        images = picked.filter(Boolean);
+      } catch {}
+
       const files = [
         "./",
         "./index.html",
@@ -38,6 +55,7 @@ function swPrecachePlugin() {
         "./icon-512.png",
         "./icon-maskable-512.png",
         ...new Set(assets),
+        ...new Set(images),
       ];
 
       const version = createHash("sha256")

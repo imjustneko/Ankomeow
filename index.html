@@ -12,6 +12,21 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Ankomeow" />
     <title>Төвлөрөх Хамтрах</title>
+
+    <!-- Splash-д хэрэгтэй эхний зургуудыг JS bundle-тай зэрэг татаж эхэлнэ,
+         ингэснээр React mount болмогц зураг аль хэдийн бэлэн байна. -->
+    <link rel="preload" as="image" href="./img/load-0.webp" />
+    <link rel="preload" as="image" href="./img/bg-main.webp" />
+
+    <!-- Firestore/Auth-ын холболтыг эрт эхлүүлж, гар барилцах хугацааг нуух -->
+    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin />
+
+    <!-- JS татагдаж дуустал цагаан дэлгэц харагдахгүй -->
+    <style>
+      html, body, #root { height: 100%; }
+      body { margin: 0; background: #F7EFE2; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
