@@ -1294,17 +1294,24 @@ const LOAD_FRAMES = [
   [LOAD_DONE, 520],
 ];
 
-function LoadingSequence() {
+function LoadingSequence({ paused = false }) {
   const [i, setI] = useState(0);
   useEffect(() => {
-    if (i >= LOAD_FRAMES.length - 1) return;
+    /* Апп бэлэн болмогц анимациа зогсооно — эс тэгвэл splash нуугдсан ч
+       үлдсэн фрэймүүдээ ард нь татсаар байдаг. */
+    if (paused || i >= LOAD_FRAMES.length - 1) return;
     const t = setTimeout(() => setI((v) => v + 1), LOAD_FRAMES[i][1]);
     return () => clearTimeout(t);
-  }, [i]);
+  }, [i, paused]);
+  /* Зөвхөн харагдсан фрэймүүд + дараагийнхыг л DOM-д байлгана. Урьд нь 9 фрэйм
+     бүгд зэрэг ордог байсан — base64 үед үнэгүй байсан ч файл болсон одоо энэ нь
+     ~500KB-ыг шууд татах байлаа. Splash ихэвчлэн эхний 1-2 фрэйм дээр хаагддаг. */
+  const visible = LOAD_FRAMES.slice(0, i + 2);
   return (
     <div className="relative" style={{ width: 300, height: 202 }}>
-      {LOAD_FRAMES.map(([src], idx) => (
-        <img key={idx} src={src} alt="" className="absolute inset-0 w-full h-full object-contain"
+      {visible.map(([src], idx) => (
+        <img key={idx} src={src} alt="" fetchPriority={idx === 0 ? "high" : "auto"}
+          className="absolute inset-0 w-full h-full object-contain"
           style={{ opacity: idx === i ? 1 : 0, transition: "opacity 260ms ease" }} />
       ))}
     </div>
@@ -1849,6 +1856,7 @@ const loadSaved = () => {
 export default function App() {
   const saved = useMemo(loadSaved, []);
   const [booted, setBooted] = useState(false);
+  const [splashGone, setSplashGone] = useState(false);
   const [tab, setTab] = useState("home");
   const [navDir, setNavDir] = useState("in");
 
@@ -1940,7 +1948,32 @@ export default function App() {
 
   const { pull, refreshing, settling } = usePullToRefresh(screenEl, refreshAll, tab !== "chat");
 
-  useEffect(() => { const t = setTimeout(() => setBooted(true), 2950); return () => clearTimeout(t); }, []);
+  /* Splash нь урьд нь 2950ms хатуу таймераар хаагддаг байсан — апп хэдийнэ бэлэн
+     болсон ч гэсэн 3 секунд зүгээр хүлээдэг байв. Одоо Firebase Auth шийдэгдмэгц
+     хаагдана; зөвхөн анимаци нүд ирмэхээс өмнө алга болохгүйн тулд доод хугацаа
+     барина. Auth ямар нэг шалтгаанаар хариу өгөхгүй бол хамгаалалтын дээд хугацаа. */
+  const bootStartRef = useRef(Date.now());
+  const SPLASH_MIN_MS = 650;
+  const SPLASH_MAX_MS = 6000;
+
+  useEffect(() => {
+    const t = setTimeout(() => setBooted(true), SPLASH_MAX_MS);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    if (!authReady) return;
+    const left = Math.max(0, SPLASH_MIN_MS - (Date.now() - bootStartRef.current));
+    const t = setTimeout(() => setBooted(true), left);
+    return () => clearTimeout(t);
+  }, [authReady]);
+
+  /* бүдгэрэх шилжилт (600ms) дууссаны дараа splash-ыг DOM-оос хасна */
+  useEffect(() => {
+    if (!booted) return;
+    const t = setTimeout(() => setSplashGone(true), 650);
+    return () => clearTimeout(t);
+  }, [booted]);
 
   /* нэвтэрсэн эсэхийг Firebase Auth-аас сонсоно */
   useEffect(() => {
@@ -2263,6 +2296,8 @@ export default function App() {
 
       <div className="w-full max-w-[400px] overflow-hidden flex flex-col relative app-frame"
         style={{
+          /* дэвсгэр зураг ирэхээс өмнө ч цайвар өнгө шууд зурагдана — цагаан анивчихгүй */
+          backgroundColor: "#F7EFE2",
           backgroundImage: `${GRAIN}, linear-gradient(180deg, rgba(253,248,239,.82) 0%, rgba(244,234,218,.88) 100%), url(${BG_MAIN})`,
           backgroundBlendMode: "multiply, normal, normal",
           backgroundSize: "auto, auto, cover",
@@ -2295,16 +2330,18 @@ export default function App() {
           </div>
         )}
 
-        {/* Splash */}
+        {/* Splash — бүдгэрч дууссаны дараа DOM-оос бүрмөсөн хасагдана */}
+        {!splashGone && (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 overflow-hidden"
           style={{
-            backgroundImage: `linear-gradient(180deg, rgba(253,248,239,.9) 0%, rgba(244,234,218,.94) 100%), url(${BG_MAIN})`,
-            backgroundSize: "cover", backgroundPosition: "center",
+            /* дэвсгэр зургийг эцэг элемент аль хэдийн үзүүлж байгаа тул энд давхардуулахгүй */
+            backgroundImage: "linear-gradient(180deg, rgba(253,248,239,.9) 0%, rgba(244,234,218,.94) 100%)",
             opacity: booted ? 0 : 1, pointerEvents: booted ? "none" : "auto",
             transition: "opacity 600ms ease",
           }}>
-          <LoadingSequence />
+          <LoadingSequence paused={booted} />
         </div>
+        )}
 
         {!authReady ? null : !user ? (
           <div className="flex-1 px-5 pt-7 pb-6 min-h-0 flex flex-col">
