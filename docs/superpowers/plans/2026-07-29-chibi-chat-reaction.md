@@ -20,7 +20,8 @@ Spec: `docs/superpowers/specs/2026-07-29-chibi-chat-reaction-design.md`
 - Commit message монголоор, `Co-Authored-By: Claude` мөр **НЭМЭХГҮЙ**.
 - `src/chibi/*.js` модулиуд Firebase, DOM, React-аас **ангид** (`environment: "node"`).
 - Үндсэн 9 нүдийн sprite хуудсыг (`public/chibi/andela.png`, `neko.png`) **өөрчлөхгүй**.
-- Шинэ sprite хуудас: `1536 × 512`, 3 багана × 1 мөр, нүд бүр `512 × 512`, ил тод дэвсгэр.
+- Sprite хуудас аль хэдийн бэлэн (Task 5 дууссан): `andela-chat.png` 1086×590 (нүд 362×590),
+  `neko-chat.png` 984×546 (нүд 328×546). Нүдний хэмжээ дүр бүрд өөр — `WALK_SHEET` ч мөн адил.
 - Хүрэлт (товшилт, чирэлт) нь анимациас **үргэлж давуу**.
 - Одоо байгаа тестүүд унах ёсгүй.
 - Тест ажиллуулах команд: `npm test`
@@ -28,8 +29,8 @@ Spec: `docs/superpowers/specs/2026-07-29-chibi-chat-reaction-design.md`
 ## Task-ийн дараалал ба блокер
 
 Task 1-4 нь **зурагнаас хамаарахгүй** — шууд хийж болно.
-Task 5-7 нь `public/chibi/*-chat.png` файлууд бэлэн болсны дараа л эхэлнэ.
-Task 5-ийн эхний алхам нь зураг үүсгэх prompt-ыг хэрэглэгчид өгөх явдал.
+Task 5 (зураг үүсгэх) нь 2026-07-29-нд ДУУССАН — хоёр хуудас public/chibi/ дотор бэлэн.
+Тиймээс Task 1-4, 6-8 бүгд шууд хийгдэнэ, блокергүй.
 
 ---
 
@@ -144,67 +145,65 @@ git commit -m "feat: уншаагүй зурвасыг тодорхойлох ch
 
 **Interfaces:**
 - Consumes: Task 1-ийн модуль.
-- Produces: `bubbleTarget({ bubble, frame, spriteWidth, spriteHeight, gap }) => { x, y, facing }`
+- Produces: `bubbleTarget({ bubble, frame, spriteWidth, offset }) => { x, facing }`
   - `bubble`, `frame` нь `{ left, top, width, height }` — `DOMRect` дамжуулж болно
   - `x` нь frame-ийн зүүн ирмэгээс хэмжигдэх пиксел (brain-ийн `x`-тэй ижил тэнхлэг)
-  - `y` нь frame-ийн **ЁРООЛООС ДЭЭШ** хэмжигдэнэ (brain-ийн `y`-тэй ижил тэнхлэг)
-  - `facing` нь `-1` (зүүн тийш заана) эсвэл `1` (баруун тийш заана)
-  - `gap` нь бөмбөлөг ба chibi хоорондын зай, өгөгдөөгүй бол `8`
+  - `facing` нь `-1` (зурсан хэвээр) эсвэл `1` (толилно)
+  - `offset` нь өгөгдөөгүй бол `12`
+
+> **Чухал:** sprite нь **дээш** заасан байдлаар зурагдсан (зүүн тийш биш).
+> Тиймээс chibi зурвасын хажууд биш, **доор** нь очиж, ердийн алхах шугам дээрээ
+> (`y = 0`) зогсоно — босоо авирах шаардлагагүй. `y` буцаахгүй.
 
 - [ ] **Step 1: Тест нэмэх**
 
-`src/chibi/chatSignal.test.js`-ийн төгсгөлд нэм. Импортын мөрийг мөн шинэчил:
+`src/chibi/chatSignal.test.js`-ийн импортын мөрийг шинэчил:
 
 ```js
 import { hasUnread, bubbleTarget } from "./chatSignal.js";
 ```
 
+Файлын төгсгөлд нэм:
+
 ```js
 describe("bubbleTarget", () => {
-  /* 400×800 frame, 72×72 chibi */
+  /* 400px өргөнтэй frame, 72px өргөнтэй chibi */
   const frame = { left: 0, top: 0, width: 400, height: 800 };
-  const base = { frame, spriteWidth: 72, spriteHeight: 72 };
+  const base = { frame, spriteWidth: 72 };
 
-  it("баруун талд зай байвал бөмбөлгийн баруун талд зогсоод зүүн тийш заана", () => {
+  it("бөмбөлгийн голын доор, багахан баруун тийш шилжиж зогсоно", () => {
+    /* бөмбөлгийн гол = 120; 120 − 36 + 12 = 96 */
     const bubble = { left: 20, top: 300, width: 200, height: 60 };
-    const t = bubbleTarget({ ...base, bubble });
-    expect(t.x).toBe(228); /* 20 + 200 + 8 */
-    expect(t.facing).toBe(-1);
+    expect(bubbleTarget({ ...base, bubble }).x).toBe(96);
   });
 
-  it("баруун талд зай хүрэхгүй бол зүүн тал руу шилжиж баруун тийш заана", () => {
-    const bubble = { left: 180, top: 300, width: 200, height: 60 };
+  it("бөмбөлгөөс баруун тийш шилжсэн тул зурсан хэвээр заана", () => {
+    const bubble = { left: 20, top: 300, width: 200, height: 60 };
+    expect(bubbleTarget({ ...base, bubble }).facing).toBe(-1);
+  });
+
+  it("баруун ирмэгт дарагдвал frame дотор багтана", () => {
+    const bubble = { left: 300, top: 300, width: 100, height: 60 };
     const t = bubbleTarget({ ...base, bubble });
-    expect(t.x).toBe(100); /* 180 − 8 − 72 */
+    expect(t.x).toBe(400 - 72);
+  });
+
+  it("зүүн ирмэгт дарагдаж бөмбөлгийн зүүн талд үлдвэл толино", () => {
+    const bubble = { left: 0, top: 300, width: 60, height: 60 };
+    const t = bubbleTarget({ ...base, bubble });
+    expect(t.x).toBe(0);
     expect(t.facing).toBe(1);
-  });
-
-  it("хоёр талд ч зай хүрэхгүй бол frame дотор багтаана", () => {
-    const bubble = { left: 0, top: 300, width: 400, height: 60 };
-    const t = bubbleTarget({ ...base, bubble });
-    expect(t.x).toBeGreaterThanOrEqual(0);
-    expect(t.x).toBeLessThanOrEqual(400 - 72);
-  });
-
-  it("y нь бөмбөлгийн голд, ёроолоос дээш хэмжигдэнэ", () => {
-    const bubble = { left: 20, top: 300, width: 200, height: 100 };
-    /* бөмбөлгийн гол = 350, chibi-гийн доод ирмэг = 350 + 36 = 386
-       ёроолоос дээш = 800 − 386 = 414 */
-    expect(bubbleTarget({ ...base, bubble }).y).toBe(414);
-  });
-
-  it("y нь frame-ийн хүрээнд clamp хийгдэнэ", () => {
-    const high = { left: 20, top: -500, width: 200, height: 60 };
-    expect(bubbleTarget({ ...base, bubble: high }).y).toBeLessThanOrEqual(800);
-    const low = { left: 20, top: 2000, width: 200, height: 60 };
-    expect(bubbleTarget({ ...base, bubble: low }).y).toBeGreaterThanOrEqual(0);
   });
 
   it("frame шилжсэн байрлалтай байсан ч харьцангуй утга буцаана", () => {
     const shifted = { left: 100, top: 50, width: 400, height: 800 };
     const bubble = { left: 120, top: 350, width: 200, height: 60 };
-    const t = bubbleTarget({ ...base, frame: shifted, bubble });
-    expect(t.x).toBe(228); /* (120 − 100) + 200 + 8 */
+    expect(bubbleTarget({ ...base, frame: shifted, bubble }).x).toBe(96);
+  });
+
+  it("offset-ыг гаднаас өгч болно", () => {
+    const bubble = { left: 20, top: 300, width: 200, height: 60 };
+    expect(bubbleTarget({ ...base, bubble, offset: 0 }).x).toBe(84);
   });
 });
 ```
@@ -219,38 +218,28 @@ Expected: FAIL — `bubbleTarget is not a function`
 `src/chibi/chatSignal.js`-ийн төгсгөлд нэм:
 
 ```js
-/* Бөмбөлгийн дэргэд зогсох цэгийг бодно.
+/* Бөмбөлгийн доор зогсох цэгийг бодно.
 
-   Оролт нь бүгд `{ left, top, width, height }` хэлбэрийн энгийн объект —
-   DOMRect тохирно, гэхдээ функц өөрөө DOM мэдэхгүй тул тестлэхэд хялбар.
+   Оролт нь `{ left, top, width, height }` хэлбэрийн энгийн объект — DOMRect
+   тохирно, гэхдээ функц өөрөө DOM мэдэхгүй тул тестлэхэд хялбар.
 
-   Гаралтын тэнхлэг нь brain-ийнхтэй ижил:
-     x — frame-ийн ЗҮҮН ирмэгээс баруун тийш
-     y — frame-ийн ЁРООЛООС дээш */
-export function bubbleTarget({ bubble, frame, spriteWidth, spriteHeight, gap = 8 }) {
+   Sprite нь ДЭЭШ (бага зэрэг зүүн тийш хазайж) заасан байдлаар зурагдсан тул
+   chibi зурвасын доор очно. Босоо байрлал нь ердийн алхах шугам (y = 0) тул
+   энд буцаахгүй.
+
+   `offset` нь chibi-г бөмбөлгийн голоос багахан баруун тийш шилжүүлнэ —
+   ингэснээр дээш-зүүн тийш заасан хуруу нь бөмбөлөг рүү оносон харагдана. */
+export function bubbleTarget({ bubble, frame, spriteWidth, offset = 12 }) {
   const maxX = Math.max(0, frame.width - spriteWidth);
-  const maxY = Math.max(0, frame.height - spriteHeight);
-  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+  const centreX = bubble.left - frame.left + bubble.width / 2;
 
-  /* Бөмбөлгийн ирмэгүүд frame-д харьцангуй */
-  const bLeft = bubble.left - frame.left;
-  const bRight = bLeft + bubble.width;
+  const wanted = centreX - spriteWidth / 2 + offset;
+  const x = Math.min(Math.max(wanted, 0), maxX);
 
-  /* Эхлээд баруун талд нь зогсоод зүүн тийш заахыг оролдоно. */
-  const rightSpot = bRight + gap;
-  const fitsRight = rightSpot + spriteWidth <= frame.width;
+  /* Ирмэгт дарагдаад бөмбөлгийн зүүн талд үлдвэл дээш-баруун тийш заахаар толино. */
+  const facing = x + spriteWidth / 2 < centreX ? 1 : -1;
 
-  const x = fitsRight ? rightSpot : bLeft - gap - spriteWidth;
-  const facing = fitsRight ? -1 : 1;
-
-  /* Босоо: бөмбөлгийн голд таарна. Дэлгэцийн y доошоо өсдөг тул
-     ёроолоос дээш хэмжихийн тулд хасна. */
-  const bTop = bubble.top - frame.top;
-  const centerY = bTop + bubble.height / 2;
-  const bottomFromTop = centerY + spriteHeight / 2;
-  const y = frame.height - bottomFromTop;
-
-  return { x: clamp(x, 0, maxX), y: clamp(y, 0, maxY), facing };
+  return { x, facing };
 }
 ```
 
@@ -263,7 +252,7 @@ Expected: PASS — бүх тест (chatSignal 13 + бусад).
 
 ```bash
 git add src/chibi/chatSignal.js src/chibi/chatSignal.test.js
-git commit -m "feat: бөмбөлгийн дэргэд зогсох цэгийг бодох bubbleTarget"
+git commit -m "feat: бөмбөлгийн доор зогсох цэгийг бодох bubbleTarget"
 ```
 
 ---
@@ -928,8 +917,8 @@ Expected: FAIL — `CHAT_SHEET` тодорхойлогдоогүй.
    Чат руу орох үед л ажиллах гурван дүр. Үндсэн 9 нүдийн хуудсыг хөндөхгүйн
    тулд WALK_SHEET-ийн адил тусдаа файлаар байрлана. */
 export const CHAT_SHEET = {
-  andela: { url: "/chibi/andela-chat.png", cols: 3, rows: 1, cellW: 512, cellH: 512 },
-  neko: { url: "/chibi/neko-chat.png", cols: 3, rows: 1, cellW: 512, cellH: 512 },
+  andela: { url: "/chibi/andela-chat.png", cols: 3, rows: 1, cellW: 362, cellH: 590 },
+  neko: { url: "/chibi/neko-chat.png", cols: 3, rows: 1, cellW: 328, cellH: 546 },
 };
 
 export const CHAT_CELL = { look: 0, turn: 1, smile: 2 };
@@ -1106,17 +1095,16 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice, 
     if (!brain || !layer) return;
 
     const frame = layer.getBoundingClientRect();
-    const { x, y, facing } = bubbleTarget({
+    const { x, facing } = bubbleTarget({
       bubble: chatAct.bubbleRect,
       frame,
       spriteWidth: SPRITE_WIDTH,
-      spriteHeight: SPRITE_HEIGHT,
     });
     chatFacingRef.current = facing;
 
     chatActiveRef.current = true;
     brain.hold(performance.now());
-    brain.walkTo(x, y, performance.now());
+    brain.walkTo(x, 0, performance.now()); /* ердийн алхах шугам дээр — босоо авирахгүй */
 
     /* Дараалал дуусаагүй байхад чатаас гарвал chibi мөнхөд хөлдөхгүй байх ёстой. */
     return () => {

@@ -45,143 +45,63 @@
   │    (байхгүй бол эсвэл chibi унтраалттай бол ЭНД ЗОГСОНО)
   │
   ├─ brain.hold()          — автономит зан зогсоно
-  ├─ brain.walkTo(x, y)    — одоо байгаа алхааны sprite-аар алхана
+  ├─ brain.walkTo(x, 0)    — бөмбөлгийн доор алхана (босоо авирахгүй)
   │
-  ├─ ирэхэд:  look   700мс — зурвас руу харан хуруугаараа заана
+  ├─ ирэхэд:  look   700мс — нуруугаа харуулан дээш зурвас руу заана
   │           turn   250мс — толгойгоо эргүүлж эхэлнэ
   │           smile 1400мс — дэлгэц рүү харан инээмсэглэнэ + зүрх гарна
   │
   └─ brain.release()       — автономит зан руугаа буцна
 ```
 
-Зорилтот цэг: бөмбөлгийн **баруун ирмэгээс 8px зайд**, босоо голд нь. Хэрэв
-баруун талд зай хүрэхгүй бол зүүн талд нь зогсоно (дараа нь `scaleX`-ээр
-толино). Бөмбөлөг дэлгэцээс гарсан бол чат аль хэдийн доош гүйлгэдэг тул
-хүлээгээд байрлалыг дахин хэмжинэ.
+Зорилтот цэг: бөмбөлгийн **хэвтээ голын доор**, chibi-гийн ердийн алхах
+шугам дээр (`y = 0`). Дүр нь **дээш заасан** байдлаар зурагдсан тул chibi
+зурвасын хажууд биш, доор нь очно — босоо авирах шаардлагагүй, чат нь босоо
+жагсаалт тул илүү байгалийн. Бөмбөлөг дэлгэцээс гарсан бол чат аль хэдийн
+доош гүйлгэдэг тул хүлээгээд байрлалыг дахин хэмжинэ.
 
 ## Шинэ sprite хуудас
 
 | Зүйл | Утга |
 |---|---|
 | Файл | `public/chibi/andela-chat.png`, `public/chibi/neko-chat.png` |
-| Хэмжээ | **1536 × 512** пиксел |
+| Хэмжээ | `andela-chat.png` **1086 × 590**, `neko-chat.png` **984 × 546** |
 | Тор | **3 багана × 1 мөр** |
-| Нүд | 512 × 512 |
+| Нүд | Andela 362 × 590, Neko 328 × 546 (дүр бүрд өөр, `WALK_SHEET`-ийн адил) |
 | Дэвсгэр | Бүрэн ил тод PNG |
 
 `sprites.js`-д нэмэгдэнэ:
 
 ```js
 export const CHAT_SHEET = {
-  andela: { url: "/chibi/andela-chat.png", cols: 3, rows: 1, cellW: 512, cellH: 512 },
-  neko:   { url: "/chibi/neko-chat.png",   cols: 3, rows: 1, cellW: 512, cellH: 512 },
+  andela: { url: "/chibi/andela-chat.png", cols: 3, rows: 1, cellW: 362, cellH: 590 },
+  neko:   { url: "/chibi/neko-chat.png",   cols: 3, rows: 1, cellW: 328, cellH: 546 },
 };
 export const CHAT_CELL = { look: 0, turn: 1, smile: 2 };
-export const CHAT_SHEET_FACING = -1;  /* зурсан дүр зүүн тийш заасан */
+export const CHAT_SHEET_FACING = -1;  /* зурсан дүр дээш, зүүн тийш бага зэрэг хазайж заасан */
 ```
 
 Байршлыг одоо байгаа `gridPosition(col, row, cols, rows)` функцээр тооцно —
 шинэ функц хэрэггүй.
 
-### AI-д өгөх prompt
+### Sprite зураг — дууссан
 
-**Хавсаргах лавлах зураг:** одоогийн бэлэн хуудсыг өөрийг нь хавсаргана —
-`public/chibi/andela.png` эсвэл `public/chibi/neko.png`. Эх зургийг
-(`assets/Chibi/Pasted image.png`) биш **бэлэн sprite-ыг** хавсаргах нь чухал:
-ингэснээр шугамын зузаан, өнгө, хэмжээ нь одоо ажиллаж байгаа дүрүүдтэй яг таарна.
+Хоёр хуудас 2026-07-29-нд ChatGPT-ээр үүсгэгдэж, `public/chibi/` дотор
+байрлав. Эх хуулбар нь `assets/Chibi/Andela chat v3.png`,
+`assets/Chibi/Neko chat.png`.
 
-#### Prompt 1 — Andela
+Ашигласан prompt нь `docs/chibi-chat-sprite-prompt.md` (v2). Энэ баримтын
+өмнөх хувилбарт байсан prompt нь хоёр алдаатай байсан тул хасагдав:
+дүрд байхгүй **таягийг** дурдсан (2026-07-28-ны хоцорсон баримтаас орж
+ирсэн), мөн **зүүн тийш заа** гэсэн нь дээш заах шийдвэрээс өмнөх байсан.
 
-```
-Use the attached sprite sheet as the exact character reference. The attached image is
-the existing 3x3 sprite sheet for this character. Match her face, hair, cat ears, eye
-color, outfit, color palette, line weight and soft cel shading EXACTLY as drawn there.
-The new poses must look like they came from that same sheet.
+Ирсэн зургуудыг гурван дүрийг автоматаар илрүүлж, хөлийг нэг шугаманд
+тааруулж, тэнцүү нүдтэй хуудас болгож нормчлов. Хэмжилт:
 
-Character: a chibi girl about 2.5 heads tall. Black cat ears with white inner fluff.
-Long wavy black hair down past her waist with several golden-amber highlight strands.
-Large violet-purple eyes. Plain black loose long-sleeve top. Dark navy baggy jeans.
-Black-and-white low sneakers. She carries a golden crescent-moon staff with a purple
-orb and a purple ribbon.
-
-Output: ONE image, 1536 x 512 pixels, on a FULLY TRANSPARENT background, containing a
-3-column x 1-row grid of three poses of this same character — cells of 512 x 512 pixels.
-
-Absolute rules:
-- Transparent background everywhere. No background color, no white box, no card,
-  no decorative frame or border, no letters, no name text, no speech bubble, no
-  sparkles, no ground shadow, no grid lines, no numbers, no labels.
-- Do NOT include the small black cat companion. The girl only.
-- Keep her at the SAME scale in all three cells — same head height, same eye level,
-  same distance from the bottom of the cell. Center her horizontally in each cell.
-- Full body visible in every cell, nothing cropped by the cell edge.
-- She keeps the staff in her LEFT hand (viewer's right) in all three cells, so her
-  RIGHT arm (viewer's left) is free to point.
-- She points toward the LEFT edge of the image in all three cells. The pointing arm
-  must stay in the same place across all three cells — only her head, eyes and mouth
-  change.
-
-The three poses, left to right — this is one continuous motion, so keep her feet and
-pointing arm identical in all three:
-1. She stands in profile turned to the LEFT, looking at something off-screen to her
-   left. Her right arm is raised and extended toward the left edge, index finger
-   clearly pointing. Her eyes are open and interested, mouth a small soft line. Her
-   body is turned left, weight on her front foot.
-2. The same stance and the same pointing arm, but her head is now turned halfway
-   toward the viewer — a three-quarter view. Her eyes are beginning to look at the
-   viewer, the corners of her mouth just starting to lift. Her hair swings slightly
-   with the head turn.
-3. The same stance and the same pointing arm, but her head is now fully turned to
-   face the viewer. She gives a warm happy smile with her eyes closed in two upward
-   curves, soft pink blush on both cheeks. Her body still faces left; only the head
-   has come around. Do NOT draw any heart symbol — the app adds hearts itself.
-```
-
-#### Prompt 2 — Neko
-
-```
-Use the attached sprite sheet as the exact character reference. The attached image is
-the existing 3x3 sprite sheet for this character. Match his face, hair, cat ears, eye
-color, outfit, color palette, line weight and soft cel shading EXACTLY as drawn there.
-The new poses must look like they came from that same sheet.
-
-Character: a chibi boy about 2.5 heads tall. Black cat ears with white inner fluff.
-Messy black hair with spiky bangs. Large dark brown eyes. Light grey hoodie with
-drawstrings. Navy blue jeans. Black-and-white sneakers. He carries a short grey sword
-with a black hilt.
-
-Output: ONE image, 1536 x 512 pixels, on a FULLY TRANSPARENT background, containing a
-3-column x 1-row grid of three poses of this same character — cells of 512 x 512 pixels.
-
-Absolute rules:
-- Transparent background everywhere. No background color, no white box, no card,
-  no decorative frame or border, no letters, no name text, no speech bubble, no
-  sparkles, no ground shadow, no grid lines, no numbers, no labels.
-- Do NOT include the small black cat companion. The boy only.
-- Keep him at the SAME scale in all three cells — same head height, same eye level,
-  same distance from the bottom of the cell. Center him horizontally in each cell.
-- Full body visible in every cell, nothing cropped by the cell edge.
-- He keeps the sword in his LEFT hand (viewer's right) in all three cells, so his
-  RIGHT arm (viewer's left) is free to point.
-- He points toward the LEFT edge of the image in all three cells. The pointing arm
-  must stay in the same place across all three cells — only his head, eyes and mouth
-  change.
-
-The three poses, left to right — this is one continuous motion, so keep his feet and
-pointing arm identical in all three:
-1. He stands in profile turned to the LEFT, looking at something off-screen to his
-   left. His right arm is raised and extended toward the left edge, index finger
-   clearly pointing. His eyes are open and interested, mouth a small soft line. His
-   body is turned left, weight on his front foot.
-2. The same stance and the same pointing arm, but his head is now turned halfway
-   toward the viewer — a three-quarter view. His eyes are beginning to look at the
-   viewer, the corners of his mouth just starting to lift. His bangs shift slightly
-   with the head turn.
-3. The same stance and the same pointing arm, but his head is now fully turned to
-   face the viewer. He gives a warm happy smile with his eyes closed in two upward
-   curves, soft pink blush on both cheeks. His body still faces left; only the head
-   has come around. Do NOT draw any heart symbol — the app adds hearts itself.
-```
+| | өргөн | өндөр | хөлний зөрүү |
+|---|---|---|---|
+| Andela | 262 / 291 / 306 | 549 / 550 / 546 | 3px |
+| Neko | 272 / 265 / 268 | 500 / 506 / 503 | 1px |
 
 ### Зураг ирсний дараах шалгалт
 
