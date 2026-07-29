@@ -41,3 +41,34 @@ export function canVibrate() {
 export function buzzMessage(name, count) {
   return count > 1 ? `${name} чамайг ${count} удаа товшлоо 💕` : `${name} чамайг товшлоо 💕`;
 }
+
+/* Хүлээн авах талын шийдвэрийн логик: чичрэх үү, мэдэгдэл харуулах уу, юу ч
+   хийхгүй юу. Firebase, DOM-оос ангид байлгахын тулд `canVibrate`,
+   `visible`-ийг гаднаас plain boolean хэлбэрээр авна.
+
+   Persistent cache асаалттай тул Firestore-ийн эхний snapshot КЭШЛЭГДСЭН
+   баримт байдаг бөгөөд дараа нь СЕРВЕРИЙН баримт ирдэг. Тиймээс baseline-ыг
+   зөвхөн серверийн (fromCache === false) эхний snapshot дээр л тогтооно —
+   эс бөгөөс кэшийн snapshot дээр baseline тогтоод, дараагийн серверийн
+   snapshot-ыг "шинэ" товшилт мэт үзэж, өглөө бүр шөнийн товшилтуудаар
+   чичрэх болно. */
+export function shouldBuzz({ fromCache, baselineReady, prev, total, canVibrate, visible }) {
+  if (!baselineReady) {
+    return { action: "none", delta: 0, nextBaselineReady: !fromCache };
+  }
+
+  const delta = pokeDelta(prev, total);
+
+  if (delta <= 0) {
+    return { action: "none", delta, nextBaselineReady: true };
+  }
+  if (canVibrate) {
+    return { action: "vibrate", delta, nextBaselineReady: true };
+  }
+  if (visible) {
+    return { action: "notify", delta, nextBaselineReady: true };
+  }
+  /* Апп харагдахгүй үед (дэлгэц түгжигдсэн, tab арын дэвсгэрт) sw.js аль
+     хэдийн OS мэдэгдэл харуулдаг тул давхар мэдэгдэл гаргахгүй. */
+  return { action: "none", delta, nextBaselineReady: true };
+}

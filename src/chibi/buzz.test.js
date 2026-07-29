@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { vibrationPattern, pokeDelta, canVibrate, buzzMessage, MAX_BUZZ_PULSES } from "./buzz.js";
+import { vibrationPattern, pokeDelta, canVibrate, buzzMessage, shouldBuzz, MAX_BUZZ_PULSES } from "./buzz.js";
 
 describe("vibrationPattern", () => {
   it("нэг товшилтод нэг богино цохилт", () => {
@@ -68,5 +68,129 @@ describe("buzzMessage", () => {
 
   it("олон товшилтыг тоогоор нэгтгэнэ", () => {
     expect(buzzMessage("Andela", 5)).toBe("Andela чамайг 5 удаа товшлоо 💕");
+  });
+});
+
+describe("shouldBuzz", () => {
+  it("baseline бэлэн бус, кэшийн snapshot ирвэл: none, бэлэн хэвээр биш", () => {
+    const r = shouldBuzz({
+      fromCache: true,
+      baselineReady: false,
+      prev: 0,
+      total: 3,
+      canVibrate: true,
+      visible: true,
+    });
+    expect(r).toEqual({ action: "none", delta: 0, nextBaselineReady: false });
+  });
+
+  it("baseline бэлэн бус, серверийн snapshot ирвэл: none, гэхдээ одоо бэлэн", () => {
+    const r = shouldBuzz({
+      fromCache: false,
+      baselineReady: false,
+      prev: 0,
+      total: 3,
+      canVibrate: true,
+      visible: true,
+    });
+    expect(r).toEqual({ action: "none", delta: 0, nextBaselineReady: true });
+  });
+
+  it("baseline бэлэн, тоолуур өөрчлөгдөөгүй бол none", () => {
+    const r = shouldBuzz({
+      fromCache: false,
+      baselineReady: true,
+      prev: 3,
+      total: 3,
+      canVibrate: true,
+      visible: true,
+    });
+    expect(r).toEqual({ action: "none", delta: 0, nextBaselineReady: true });
+  });
+
+  it("baseline бэлэн, тоолуур буурсан (дахин тохируулагдсан) бол none", () => {
+    const r = shouldBuzz({
+      fromCache: false,
+      baselineReady: true,
+      prev: 9,
+      total: 2,
+      canVibrate: true,
+      visible: true,
+    });
+    expect(r).toEqual({ action: "none", delta: 0, nextBaselineReady: true });
+  });
+
+  it("baseline бэлэн, тоолуур өссөн, чичрэх боломжтой бол vibrate", () => {
+    const r = shouldBuzz({
+      fromCache: false,
+      baselineReady: true,
+      prev: 3,
+      total: 5,
+      canVibrate: true,
+      visible: true,
+    });
+    expect(r).toEqual({ action: "vibrate", delta: 2, nextBaselineReady: true });
+  });
+
+  it("baseline бэлэн, чичрэх боломжгүй (iOS) ч апп харагдаж байвал notify", () => {
+    const r = shouldBuzz({
+      fromCache: false,
+      baselineReady: true,
+      prev: 3,
+      total: 5,
+      canVibrate: false,
+      visible: true,
+    });
+    expect(r).toEqual({ action: "notify", delta: 2, nextBaselineReady: true });
+  });
+
+  it("baseline бэлэн, чичрэх боломжгүй, апп нуугдмал бол none (sw.js хариуцна)", () => {
+    const r = shouldBuzz({
+      fromCache: false,
+      baselineReady: true,
+      prev: 3,
+      total: 5,
+      canVibrate: false,
+      visible: false,
+    });
+    expect(r).toEqual({ action: "none", delta: 2, nextBaselineReady: true });
+  });
+
+  it("бодит дараалал: кэш → сервер → шинэ товшилт", () => {
+    /* 1. mount, кэшийн snapshot: baseline бэлэн бус хэвээр */
+    let r = shouldBuzz({
+      fromCache: true,
+      baselineReady: false,
+      prev: 0,
+      total: 7,
+      canVibrate: true,
+      visible: true,
+    });
+    expect(r.action).toBe("none");
+    expect(r.nextBaselineReady).toBe(false);
+
+    /* 2. серверийн snapshot: baseline эцэст нь бэлэн болно, гэхдээ энэ
+       snapshot дээр өөрөө чичрэхгүй */
+    r = shouldBuzz({
+      fromCache: false,
+      baselineReady: r.nextBaselineReady,
+      prev: 7,
+      total: 7,
+      canVibrate: true,
+      visible: true,
+    });
+    expect(r.action).toBe("none");
+    expect(r.nextBaselineReady).toBe(true);
+
+    /* 3. baseline бэлэн болсны дараа шинэ товшилт ирвэл vibrate/notify */
+    r = shouldBuzz({
+      fromCache: false,
+      baselineReady: r.nextBaselineReady,
+      prev: 7,
+      total: 8,
+      canVibrate: true,
+      visible: true,
+    });
+    expect(r).toEqual({ action: "vibrate", delta: 1, nextBaselineReady: true });
   });
 });

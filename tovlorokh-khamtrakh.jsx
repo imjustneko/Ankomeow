@@ -9,7 +9,7 @@ import { useSwipeBack } from "./src/hooks/useSwipeBack.js";
 import { usePullToRefresh } from "./src/hooks/usePullToRefresh.js";
 import ChibiPet from "./src/chibi/ChibiPet.jsx";
 import { createPokeSender } from "./src/chibi/poke.js";
-import { pokeDelta, vibrationPattern, canVibrate, buzzMessage } from "./src/chibi/buzz.js";
+import { vibrationPattern, canVibrate, buzzMessage, shouldBuzz } from "./src/chibi/buzz.js";
 
 /* ── Firebase (хос chat) ── */
 const firebaseConfig = {
@@ -2142,39 +2142,39 @@ export default function App() {
         }
       }
 
-      /* ── 2. чичиргээ ── */
+      /* ── 2. чичиргээ / iOS-ийн мэдэгдэл ── */
       const total = Number(data?.total ?? 0);
       const prev = Number(localStorage.getItem("ankomeow-poke-total") || 0);
       localStorage.setItem("ankomeow-poke-total", String(total));
 
-      if (!pokeBaselineReadyRef.current) {
-        if (!snap.metadata.fromCache) pokeBaselineReadyRef.current = true;
-        return;
-      }
+      const { action, delta, nextBaselineReady } = shouldBuzz({
+        fromCache: snap.metadata.fromCache,
+        baselineReady: pokeBaselineReadyRef.current,
+        prev,
+        total,
+        canVibrate: canVibrate(),
+        visible: document.visibilityState === "visible",
+      });
+      pokeBaselineReadyRef.current = nextBaselineReady;
 
-      const delta = pokeDelta(prev, total);
-      if (delta <= 0) return;
-
-      if (canVibrate()) {
+      if (action === "vibrate") {
         navigator.vibrate(vibrationPattern(delta));
         return;
       }
 
-      /* iOS — Vibration API байхгүй. Системийн мэдэгдлээр нь чичрүүлнэ.
-         Зөвшөөрөл байхгүй бол чимээгүй бүтэлгүйтнэ. */
-      if (document.visibilityState !== "visible") {
-        /* Апп харагдахгүй үед (дэлгэц түгжигдсэн, tab арын дэвсгэрт) sw.js
-           аль хэдийн OS мэдэгдэл харуулдаг тул давхар мэдэгдэл гаргахгүй. */
-        return;
+      if (action === "notify") {
+        /* iOS — Vibration API байхгүй, апп харагдаж байгаа тул зөвхөн энд л
+           мэдэгдэл харуулна (нуугдмал үед sw.js хариуцна).
+           Зөвшөөрөл байхгүй бол чимээгүй бүтэлгүйтнэ. */
+        const name = partnerKey ? ACCOUNTS[partnerKey]?.name : "Хамтрагч";
+        navigator.serviceWorker?.ready
+          .then((reg) => reg.showNotification("Ankomeow", {
+            body: buzzMessage(name, delta),
+            icon: "./icon-192.png",
+            tag: `poke-${total}`,
+          }))
+          .catch(() => {});
       }
-      const name = partnerKey ? ACCOUNTS[partnerKey].name : "Хамтрагч";
-      navigator.serviceWorker?.ready
-        .then((reg) => reg.showNotification("Ankomeow", {
-          body: buzzMessage(name, delta),
-          icon: "./icon-192.png",
-          tag: `poke-${total}`,
-        }))
-        .catch(() => {});
     }, () => {});
 
     return unsub;
