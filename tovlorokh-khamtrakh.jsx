@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { ChevronLeft, Check, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle, Bell, BellOff } from "lucide-react";
 import { initializeApp } from "firebase/app";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, arrayUnion } from "firebase/firestore";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, arrayUnion, increment } from "firebase/firestore";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 import { pushSupported, pushPermission, requestPushToken, notifyPartner, NOTIFY_ENDPOINT } from "./src/push.js";
 import { useKeyboardInset } from "./src/hooks/useKeyboardInset.js";
@@ -2096,10 +2096,12 @@ export default function App() {
     if (!partnerKey) return null;
     return createPokeSender({
       partnerName: ACCOUNTS[partnerKey]?.name || "Хамтрагч",
-      writeDoc: ({ count }) =>
+      /* merge: true ЗААВАЛ хэрэгтэй — эс бөгөөс баримт бүтнээрээ дарагдаж,
+         increment утгагүй болно. */
+      writeDoc: () =>
         setDoc(doc(db, "rooms", CHAT_ROOM, "pokes", partnerKey), {
-          from: accountKey, count, at: serverTimestamp(),
-        }),
+          from: accountKey, total: increment(1), at: serverTimestamp(),
+        }, { merge: true }),
       sendPush: ({ title, body, tag }) =>
         notifyPartner(auth, { to: partnerKey, title, body, tag, tab: "home" }),
     });
