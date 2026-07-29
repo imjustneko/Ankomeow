@@ -9,6 +9,7 @@ import { useSwipeBack } from "./src/hooks/useSwipeBack.js";
 import { usePullToRefresh } from "./src/hooks/usePullToRefresh.js";
 import ChibiPet from "./src/chibi/ChibiPet.jsx";
 import { createPokeSender } from "./src/chibi/poke.js";
+import { pokeDelta, vibrationPattern, canVibrate, buzzMessage } from "./src/chibi/buzz.js";
 
 /* ── Firebase (хос chat) ── */
 const firebaseConfig = {
@@ -2107,21 +2108,66 @@ export default function App() {
     });
   }, [accountKey, partnerKey]);
 
-  /* Хос миний chibi-г товшлоо — дэлгэц дээрх chibi баярлана */
+  /* Хос миний chibi-г товшлоо.
+
+     Хоёр тусдаа зүйл болно:
+       1. chibi баярлана — `at` хугацаанд суурилсан хуучин логик хэвээр.
+          Апп нээхэд хуучин товшилт байвал ч chibi баярлана.
+       2. чичиргээ / iOS-ийн мэдэгдэл — `total` тоолуурын delta-д суурилна.
+          Апп нээх үеийн ПЕРВЫЙ snapshot-д ЭНЭ АЖИЛЛАХГҮЙ, эс бөгөөс өглөө бүр
+          шөнийн товшилтуудаар чичрэх болно. */
+  const firstPokeSnapRef = useRef(true);
+
   useEffect(() => {
     if (!accountKey) return;
+    firstPokeSnapRef.current = true;
+
     const unsub = onSnapshot(doc(db, "rooms", CHAT_ROOM, "pokes", accountKey), (snap) => {
-      const at = snap.data()?.at;
-      if (!at) return;
-      const ms = at.toMillis();
-      const lastSeen = Number(localStorage.getItem("ankomeow-last-poke") || 0);
-      if (ms > lastSeen) {
-        localStorage.setItem("ankomeow-last-poke", String(ms));
-        setChibiHappyAt(ms);
+      const data = snap.data();
+
+      /* ── 1. chibi-гийн баяр ── */
+      const at = data?.at;
+      if (at) {
+        const ms = at.toMillis();
+        const lastSeen = Number(localStorage.getItem("ankomeow-last-poke") || 0);
+        if (ms > lastSeen) {
+          localStorage.setItem("ankomeow-last-poke", String(ms));
+          setChibiHappyAt(ms);
+        }
       }
+
+      /* ── 2. чичиргээ ── */
+      const total = Number(data?.total ?? 0);
+      const prev = Number(localStorage.getItem("ankomeow-poke-total") || 0);
+      localStorage.setItem("ankomeow-poke-total", String(total));
+
+      if (firstPokeSnapRef.current) {
+        firstPokeSnapRef.current = false;
+        return;
+      }
+
+      const delta = pokeDelta(prev, total);
+      if (delta <= 0) return;
+
+      if (canVibrate()) {
+        navigator.vibrate(vibrationPattern(delta));
+        return;
+      }
+
+      /* iOS — Vibration API байхгүй. Системийн мэдэгдлээр нь чичрүүлнэ.
+         Зөвшөөрөл байхгүй бол чимээгүй бүтэлгүйтнэ. */
+      const name = partnerKey ? ACCOUNTS[partnerKey].name : "Хамтрагч";
+      navigator.serviceWorker?.ready
+        .then((reg) => reg.showNotification("Ankomeow", {
+          body: buzzMessage(name, delta),
+          icon: "./icon-192.png",
+          tag: `poke-${total}`,
+        }))
+        .catch(() => {});
     }, () => {});
+
     return unsub;
-  }, [accountKey]);
+  }, [accountKey, partnerKey]);
 
   /* мэдэгдлийн одоогийн төлөвийг тодорхойлно */
   useEffect(() => {
