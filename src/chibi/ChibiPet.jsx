@@ -5,7 +5,7 @@ import {
   cellPosition, gridPosition, frameFor, walkFrame,
   CHAT_SHEET, CHAT_STEPS, CHAT_SHEET_FACING,
 } from "./sprites.js";
-import { TALKATIVE, pickPhrase } from "./phrases.js";
+import { TALKATIVE, pickPhrase, CHAT_POINT_PHRASE } from "./phrases.js";
 import { bubbleTarget, walkDurationMs } from "./chatSignal.js";
 
 /* Sprite зураг ачаалагдаагүй үед харагдах энгийн орлуулагч —
@@ -350,13 +350,17 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice, 
   const heartsX = (heartsSnap?.x ?? 0) + SPRITE_WIDTH / 2;
   const heartsY = -(heartsSnap?.y ?? 0);
 
-  /* Бөмбөлгийн агуулга: мэдэгдэл нь санамсаргүй үгнээс давуу. `key` нь
-     дахин mount хийлгэж анимацийг эхнээс нь тоглуулна. */
+  /* Бөмбөлгийн агуулга, давуу эрхийн дарааллаар: мэдэгдэл → чат заах үг →
+     санамсаргүй үг. `key` нь дахин mount хийлгэж анимацийг эхнээс нь
+     тоглуулна; чат заах үгийн key нь дарааллын турш тогтмол тул гурван
+     дүрийн хооронд бөмбөлөг дахин үсрэхгүй. */
   const bubbleContent = noticeShown
     ? { text: noticeShown.text, key: `notice-${noticeShown.key}`, onTap: noticeShown.onTap }
-    : phrase && state === "blush"
-      ? { text: phrase.text, key: `phrase-${phrase.key}`, onTap: null }
-      : null;
+    : chatStep !== null
+      ? { text: CHAT_POINT_PHRASE, key: `chat-${chatAct?.key ?? 0}`, onTap: null }
+      : phrase && state === "blush"
+        ? { text: phrase.text, key: `phrase-${phrase.key}`, onTap: null }
+        : null;
 
   /* Алхаж/өгсөж байвал 4 чиглэлийн бүтэн циклтэй хуудсыг, бусад үед позын
      хуудсыг ашиглана. Зураг ачаалагдаагүй бол орлуулагч. */
@@ -378,6 +382,11 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice, 
     ? Math.round((spriteH * activeSheet.cellW) / activeSheet.cellH)
     : SPRITE_WIDTH;
   boxWRef.current = boxW;
+
+  /* Чат дүрийн үед chibi өндөр бөгөөд хуруугаа дээш өргөсөн байдаг тул
+     бөмбөлгийг sprite-ийн оройноос дээгүүр өргөнө — эс бөгөөс өргөсгөсөн
+     гартай давхцана. Бусад үед хуучин байрлал хэвээр. */
+  const bubbleBottomPx = chatStep !== null ? spriteH + 12 : 74;
 
   const sheet = broken
     ? { backgroundImage: `url(${PLACEHOLDER})`, backgroundSize: "100% 100%", backgroundPosition: "0% 0%" }
@@ -435,7 +444,7 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice, 
           ref={bubbleRef}
           key={bubbleContent.key}
           className="absolute chibi-bubble pointer-events-none"
-          style={{ bottom: "calc(var(--chibi-baseline, 84px) + 74px)", left: 0, transform: `translate3d(${heartsX}px, ${heartsY}px, 0)` }}
+          style={{ bottom: `calc(var(--chibi-baseline, 84px) + ${bubbleBottomPx}px)`, left: 0, transform: `translate3d(${heartsX}px, ${heartsY}px, 0)` }}
         >
           {/* Зөвхөн харагдах бичиг нь товшигдоно — бөмбөлгийн бүтэн хайрцаг
               доорх картуудын хүрэлтийг залгихгүй. */}

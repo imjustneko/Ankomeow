@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { PHRASES, TALKATIVE, pickPhrase } from "./phrases.js";
+import { PHRASES, TALKATIVE, pickPhrase, CHAT_POINT_PHRASE } from "./phrases.js";
 
 describe("pickPhrase", () => {
   it("жагсаалтаас үг буцаана", () => {
@@ -19,5 +19,16 @@ describe("pickPhrase", () => {
 
   it("зөвхөн Neko-гийн дүр ярина", () => {
     expect(TALKATIVE).toBe("neko");
+  });
+});
+
+describe("CHAT_POINT_PHRASE", () => {
+  it("хоосон биш тогтмол үг", () => {
+    expect(typeof CHAT_POINT_PHRASE).toBe("string");
+    expect(CHAT_POINT_PHRASE.trim().length).toBeGreaterThan(0);
+  });
+
+  it("санамсаргүй үгсийн жагсаалтад ороогүй — тусдаа зорилготой", () => {
+    expect(PHRASES).not.toContain(CHAT_POINT_PHRASE);
   });
 });
