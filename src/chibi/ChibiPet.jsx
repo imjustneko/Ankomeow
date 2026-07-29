@@ -66,7 +66,9 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice }
   useEffect(() => {
     if (!notice) return setNoticeShown(null);
     setNoticeShown(notice);
-    const t = setTimeout(() => setNoticeShown(null), 5000);
+    /* Мэдэгдэл дуусахад хуучирсан ярианы үг ард нь бас арилгана — эс бөгөөс
+       мэдэгдлийн турш дарагдсан хуучин phrase дараа нь дахин бөмбөлөг болж гарна. */
+    const t = setTimeout(() => { setNoticeShown(null); setPhrase(null); }, 5000);
     return () => clearTimeout(t);
   }, [notice?.key]);
   const boxWRef = useRef(SPRITE_WIDTH);
@@ -150,7 +152,8 @@ export default function ChibiPet({ character, enabled, onPoke, happyAt, notice }
           const bx = Math.min(Math.max(s.x + SPRITE_WIDTH / 2, half), Math.max(half, w - half));
           bubbleRef.current.style.transform = `translate3d(${bx}px, ${-s.y}px, 0)`;
         }
-        /* Бөмбөлөг зөвхөн blush төлөвт зурагддаг тул төлөв солигдмогц өөрөө арилна */
+        /* Тархины төлөв солигдсон үед л render хийлгэнэ (жишээ нь "phrase" бөмбөлөг
+           зөвхөн blush төлөвт харагддаг тул үүнээс шалтгаална) */
         setState((st) => (st === s.state ? st : s.state));
       }
       rafRef.current = requestAnimationFrame(loop);

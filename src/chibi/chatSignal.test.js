@@ -30,6 +30,10 @@ describe("hasUnread", () => {
   it("хугацаа нь тодорхойгүй зурвасыг уншаагүйд тооцохгүй", () => {
     expect(hasUnread({ sender: "andela", createdAtMs: null }, 1000, "neko")).toBe(false);
   });
+
+  it("тоо биш хугацаатай зурвасыг уншаагүйд тооцохгүй", () => {
+    expect(hasUnread({ sender: "andela", createdAtMs: undefined }, 1000, "neko")).toBe(false);
+  });
 });
 
 describe("bubbleTarget", () => {

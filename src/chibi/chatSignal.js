@@ -12,7 +12,10 @@ export function hasUnread(lastMsg, myReadAtMs, accountKey) {
   if (!lastMsg) return false;
   if (lastMsg.sender === accountKey) return false;
 
-  const created = Number(lastMsg.createdAtMs);
+  const raw = lastMsg.createdAtMs;
+  if (raw === null || raw === undefined) return false;
+
+  const created = Number(raw);
   if (!Number.isFinite(created)) return false;
 
   /* Хэзээ ч нээгээгүй бол хамтрагчийн аливаа зурвас уншаагүй. */

@@ -1922,6 +1922,7 @@ export default function App() {
   const [chibiHappyAt, setChibiHappyAt] = useState(null);
   const [lastMsg, setLastMsg] = useState(null);       /* { sender, createdAtMs } */
   const [myReadAtMs, setMyReadAtMs] = useState(null);
+  const [readsLoaded, setReadsLoaded] = useState(false); /* "уншсан" listener анх удаа ирсэн эсэх */
   const [chatNotice, setChatNotice] = useState(null); /* { text, key, onTap } */
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
@@ -2136,12 +2137,20 @@ export default function App() {
   useEffect(() => {
     if (!accountKey) return;
     const unsub = onSnapshot(doc(db, "rooms", CHAT_ROOM, "reads", accountKey), (snap) => {
+      /* Өөрийн бичилтийн локал цуурай — serverTimestamp хараахан бөглөгдөөгүй
+         тул at нь null байна. Үүнийг "хэзээ ч уншаагүй" гэж андуурч болохгүй. */
+      if (snap.metadata.hasPendingWrites) return;
       setMyReadAtMs(snap.data()?.at?.toMillis?.() ?? null);
+      setReadsLoaded(true);
     }, () => {});
     return unsub;
   }, [accountKey]);
 
-  const chatUnread = hasUnread(lastMsg, myReadAtMs, accountKey);
+  /* readsLoaded ирэхээс өмнө unread тооцохгүй — эс бөгөөс хоёр listener
+     тусдаа snapshot-оор ирдэг тул завсрын render дээр myReadAtMs хараахан
+     ачаалагдаагүй null хэвээр байхад lastMsg аль хэдийн ирсэн байж,
+     худал "уншаагүй" болж таамаглагдана. */
+  const chatUnread = readsLoaded && hasUnread(lastMsg, myReadAtMs, accountKey);
 
   /* «Уншаагүй биш» → «уншаагүй» болж шилжих агшинд бөмбөлөг нэг удаа гарна.
      Уншаагүй төлөв үргэлжилсэн ч давтан гарахгүй — nav дээрх цэг л үлдэнэ. */
@@ -2153,6 +2162,8 @@ export default function App() {
     prevUnreadRef.current = chatUnread;
 
     if (!chatUnread) return setChatNotice(null);
+    /* Чат дотор байгаа хүнд зурвас ирснийг мэдэгдэх нь илүүц. */
+    if (tab === "chat") return setChatNotice(null);
     if (was) return; /* аль хэдийн уншаагүй байсан — дахин гаргахгүй */
 
     noticeKeyRef.current += 1;
@@ -2161,7 +2172,7 @@ export default function App() {
       key: noticeKeyRef.current,
       onTap: () => go("chat"),
     });
-  }, [chatUnread]);
+  }, [chatUnread, tab]);
 
   /* Хос миний chibi-г товшлоо.
 
