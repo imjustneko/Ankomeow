@@ -422,6 +422,16 @@ describe("walkTo", () => {
     b.tick(100);
     expect(b.consumeArrival()).toBe(false);
   });
+
+  it("явж байхад хүрээ багасвал зорилтот цэг дахин таслагдаж хүрнэ", () => {
+    const b = makeBrain();
+    b.walkTo(99999, 0, 0);
+    b.tick(100);
+    b.setWidth(200);
+    for (let t = 200; t <= 60000; t += 100) b.tick(t);
+    expect(b.snapshot().state).not.toBe("goto");
+    expect(b.consumeArrival()).toBe(true);
+  });
 });
 
 describe("hold ба release", () => {
@@ -466,5 +476,37 @@ describe("hold ба release", () => {
     b.hold(0);
     b.poke(100);
     expect(b.snapshot().state).toBe("blush");
+  });
+
+  it("hold үед walk төлөвт байсан ч байрнаасаа хөдлөхгүй", () => {
+    const b = makeBrain();
+    const x0 = b.snapshot().x;
+    b.hold(0);
+    for (let t = 1000; t <= 30000; t += 1000) b.tick(t);
+    expect(b.snapshot().x).toBe(x0);
+  });
+
+  it("hold үед poke хийсний дараа ч алхаж эхлэхгүй", () => {
+    const b = makeBrain();
+    b.hold(0);
+    b.poke(100);
+    const x0 = b.snapshot().x;
+    for (let t = 200; t <= 30000; t += 100) b.tick(t);
+    expect(b.snapshot().x).toBe(x0);
+  });
+
+  it("чирэлт нь командын дарааллыг цуцална", () => {
+    const b = makeBrain();
+    b.hold(0);
+    b.walkTo(10, 0, 0);
+    b.tick(100);
+    b.pointerDown(200, 50, 50);
+    b.pointerMove(300, 90, 50);
+    expect(b.snapshot().state).toBe("dragged");
+    b.pointerUp(400);
+    for (let t = 500; t <= 30000; t += 100) b.tick(t);
+    /* held цуцлагдсан тул автономит зан руугаа буцсан байх ёстой */
+    expect(b.snapshot().state).not.toBe("dragged");
+    expect(b.consumeArrival()).toBe(false);
   });
 });

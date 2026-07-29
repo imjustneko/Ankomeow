@@ -58,6 +58,10 @@ export function createBrain({ width, rise = 0, spriteWidth, rand = Math.random }
   const maxY = () => Math.max(0, frameRise);
   const clampX = () => { x = Math.min(Math.max(x, 0), maxX()); };
   const clampY = () => { y = Math.min(Math.max(y, 0), maxY()); };
+  const clampGotoTarget = () => {
+    targetX = Math.min(Math.max(targetX, 0), maxX());
+    gotoTargetY = Math.min(Math.max(gotoTargetY, 0), maxY());
+  };
   const between = (min, max) => min + rand() * (max - min);
 
   const enter = (next, at, dur) => {
@@ -100,7 +104,7 @@ export function createBrain({ width, rise = 0, spriteWidth, rand = Math.random }
       const dt = Math.max(0, at - now);
       now = at;
 
-      if (state === "walk") {
+      if (state === "walk" && !held) {
         x += (facing * SPEED * dt) / 1000;
         if (x <= 0) { x = 0; facing = 1; }
         if (x >= maxX()) { x = maxX(); facing = -1; }
@@ -138,7 +142,7 @@ export function createBrain({ width, rise = 0, spriteWidth, rand = Math.random }
         return;
       }
 
-      if (state === "climb") {
+      if (state === "climb" && !held) {
         const step = (CLIMB_SPEED * dt) / 1000;
         const gap = targetY - y;
         dir = gap >= 0 ? "up" : "down";
@@ -214,7 +218,13 @@ export function createBrain({ width, rise = 0, spriteWidth, rand = Math.random }
       const dy = clientY - pointer.startClientY;
       if (!pointer.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
       pointer.moved = true;
-      if (state !== "dragged") enter("dragged", at, Infinity);
+      if (state !== "dragged") {
+        enter("dragged", at, Infinity);
+        /* Хэрэглэгчийн чирэлт нь командын дарааллыг цуцална — эс бөгөөс
+           брэйн held хэвээр үлдэж, хэзээ ч хүрэлт бүртгэгдэхгүй. */
+        held = false;
+        arrived = false;
+      }
       x = pointer.startX + dx;
       y = pointer.startY - dy;
       clampX();
@@ -252,11 +262,13 @@ export function createBrain({ width, rise = 0, spriteWidth, rand = Math.random }
       if (typeof nextRise === "number") frameRise = nextRise;
       clampX();
       clampY();
+      clampGotoTarget();
     },
 
     setWidth(next) {
       frameWidth = next;
       clampX();
+      clampGotoTarget();
     },
 
     /* ── Заасан цэг рүү явах ── */
@@ -281,6 +293,10 @@ export function createBrain({ width, rise = 0, spriteWidth, rand = Math.random }
     hold(at) {
       now = at;
       held = true;
+      /* Байрандаа зогсооно — эс бөгөөс walk/climb блок held-ийн шалгалтаас
+         өмнө ажиллаж, chibi үргэлжлүүлэн алхсаар байна. Чирэгдэж байгаа
+         бол хэрэглэгчийн үйлдлийг таслахгүй. */
+      if (state !== "dragged") enter("idle", at, Infinity);
     },
 
     /* Автономит зан руугаа буцна. */
