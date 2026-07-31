@@ -33,7 +33,7 @@
     <script>
       (function () {
         try {
-          var m = localStorage.getItem("ankomeow-theme") || "auto";
+          var m = localStorage.getItem("ankomeow-theme") || "light";
           var dark = m === "dark" || (m === "auto" &&
             window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
           var bg = dark ? "#191419" : "#F4EADA";

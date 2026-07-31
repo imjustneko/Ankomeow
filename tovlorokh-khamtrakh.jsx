@@ -20,7 +20,7 @@ import { ProfileScreen, StatusCard, CoupleDatesCard, ChangePasswordCard } from "
 import { ChatScreen } from "./src/screens/ChatScreen.jsx";
 import { DrawingView, DrawPad } from "./src/ui/drawing.jsx";
 import {
-  IMG, LOGO, IC_PROFILE, IC_WATER, IC_LIST, IC_TIME, IC_GIF, IC_CAT, AVATARS,
+  IMG, LOGO, IC_PROFILE, IC_WATER, IC_TIME, IC_GIF, IC_CAT, IC_HOME, AVATARS,
   BG_MAIN, GRAIN, WELCOME_HERO, NAV_HOME, NAV_WATER, NAV_LIST, NAV_TIME, NAV_GIF,
   CAR_LIST, CAR_WATER, CAR_SCREEN, CAR_GIF,
   LOAD_0, LOAD_25, LOAD_50, LOAD_75, LOAD_90, LOAD_100, LOAD_ALMOST, LOAD_DONE, LOAD_FINISH,
@@ -747,8 +747,10 @@ export default function App() {
      useSwipeBack/usePullToRefresh дотоод listener хэзээ ч холбогдохгүй
      үлдэх эрсдэлтэй байсан. setScreenEl callback ref нь element бодитоор
      mount/unmount болох мөч бүрд дуудагддаг тул энэ асуудлыг арилгана. */
-  /* Өнгөний горим: "auto" бол системийн сонголтыг дагана */
-  const [themeMode, setThemeMode] = useState(() => localStorage.getItem("ankomeow-theme") || "auto");
+  /* Өнгөний горим. ӨГӨГДМӨЛ нь "light" — апп цагаанаараа нээгддэг байх ёстой.
+     Утасны системийн харанхуй тохиргоог автоматаар дагахгүй: хэрэглэгч
+     профайл дээрээс зориудаар л шөнийн горимыг асаана. */
+  const [themeMode, setThemeMode] = useState(() => localStorage.getItem("ankomeow-theme") || "light");
   useEffect(() => {
     localStorage.setItem("ankomeow-theme", themeMode);
     const mq = window.matchMedia?.("(prefers-color-scheme: dark)");

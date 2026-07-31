@@ -72,8 +72,36 @@ for (const [f, s] of src) {
   }
 }
 
+/* JSX доторх бүрэлдэхүүн бүр тодорхойлогдсон эсэх.
+
+   Дээрх шалгалт нь зөвхөн ЭНЭ ТӨСЛИЙН нэрсийг мэддэг тул гаднаас ирдэг
+   бүрэлдэхүүн (жишээ нь lucide-react-ийн дүрс) импортгүй үлдвэл барихгүй.
+   Яг ийм алдаанаас болж primitives.jsx-ийн Header нь ChevronLeft-гүй үлдэж,
+   Header агуулсан БҮХ дэлгэц ажиллах үедээ унасан. Vite build үүнийг
+   мэдээлээгүй — зөвхөн хэрэглэгчийн дэлгэц хар болсон. */
+const HTML_TAG = /^[a-z]/;
+for (const [f, s] of src) {
+  if (!f.endsWith(".jsx")) continue;
+  /* Энд догол мөрт (функц доторх) тодорхойлолтыг ч тооцно — DrawPad доторх
+     IconBtn шиг локал бүрэлдэхүүн олон бий. */
+  const local = new Set();
+  for (const m of s.matchAll(/(?:const|let|var|function|class)\s+([A-Z][\w$]*)/g)) local.add(m[1]);
+  const have = new Set([...declared(s), ...imported(s), ...local]);
+  const body = stripComments(s);
+  const used = new Set();
+  for (const m of body.matchAll(/<([A-Za-z][\w.]*)/g)) {
+    const tag = m[1].split(".")[0];
+    if (!HTML_TAG.test(tag)) used.add(tag);
+  }
+  const missing = [...used].filter((n) => !have.has(n));
+  if (missing.length) {
+    bad++;
+    console.error(`✗ ${f}\n    тодорхойлогдоогүй бүрэлдэхүүн: ${missing.join(", ")}`);
+  }
+}
+
 if (bad) {
-  console.error(`\n${bad} файлд дутуу импорт байна.`);
+  console.error(`\n${bad} файлд асуудал байна.`);
   process.exit(1);
 }
 console.log(`✓ ${files.length} файлын импорт бүрэн`);

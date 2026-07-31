@@ -1,5 +1,6 @@
 /* Аппын нийтлэг үндсэн элементүүд — бүх дэлгэц эдгээрийг ашиглана. */
 
+import { ChevronLeft } from "lucide-react";
 import { C } from "../lib/theme.js";
 
 /* ── жижиг элементүүд ── */
