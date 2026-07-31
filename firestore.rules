@@ -43,8 +43,26 @@ service cloud.firestore {
       allow read, write: if isCouple() && key == myKey();
     }
 
+    /* Хадгалсан чат — зөвхөн эзэн нь өөрийн хуулбарыг уншиж, бичнэ */
+    match /rooms/ankomeow-couple/saved/{key}/items/{itemId} {
+      allow read, write: if isCouple() && key == myKey();
+    }
+
+    /* Зурсан sticker сан — зөвхөн эзэн нь */
+    match /rooms/ankomeow-couple/stickers/{key}/items/{itemId} {
+      allow read, write: if isCouple() && key == myKey();
+    }
+
+    /* Статус — хос нь уншина, эзэн нь л бичнэ */
     match /rooms/ankomeow-couple/profiles/{key} {
-      allow read, write: if isCouple();
+      allow read: if isCouple();
+      allow write: if isCouple() && key == myKey();
+    }
+
+    /* Бодит цагийн байршил — хос нь уншина, эзэн нь л бичнэ */
+    match /rooms/ankomeow-couple/live/{key} {
+      allow read: if isCouple();
+      allow write: if isCouple() && key == myKey();
     }
 
     match /{document=**} {
