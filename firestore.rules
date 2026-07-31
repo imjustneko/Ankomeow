@@ -53,6 +53,12 @@ service cloud.firestore {
       allow read, write: if isCouple() && key == myKey();
     }
 
+    /* Хүслийн жагсаалт — хос нь харна, эзэн нь л бичнэ */
+    match /rooms/ankomeow-couple/wishes/{key}/items/{itemId} {
+      allow read: if isCouple();
+      allow write: if isCouple() && key == myKey();
+    }
+
     /* Статус — хос нь уншина, эзэн нь л бичнэ */
     match /rooms/ankomeow-couple/profiles/{key} {
       allow read: if isCouple();
