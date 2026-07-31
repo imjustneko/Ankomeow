@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { ChevronLeft, Check, Copy, Bookmark, BookmarkCheck, Brush, Sticker, Wand2, Gift, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle, Bell, BellOff } from "lucide-react";
+import { ChevronLeft, Check, Copy, Bookmark, BookmarkCheck, Brush, Sticker, Wand2, Gift, CalendarHeart, Reply, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle, Bell, BellOff } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, arrayUnion, increment } from "firebase/firestore";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
@@ -10,6 +10,7 @@ import { usePullToRefresh } from "./src/hooks/usePullToRefresh.js";
 import ChibiPet from "./src/chibi/ChibiPet.jsx";
 import { createPokeSender } from "./src/chibi/poke.js";
 import { hasUnread } from "./src/chibi/chatSignal.js";
+import { dayNumber, nextMilestone, nextBirthday, streakCount, bothDoneDays, leftText, isValidDay } from "./src/lib/couple.js";
 import { vibrationPattern, canVibrate, buzzMessage, shouldBuzz } from "./src/chibi/buzz.js";
 
 /* ── Firebase (хос chat) ── */
@@ -996,6 +997,12 @@ const chatTime = (ts) => {
 const savedItemsCol = (accountKey) => collection(db, "rooms", CHAT_ROOM, "saved", accountKey, "items");
 const savedItemDoc = (accountKey, id) => doc(db, "rooms", CHAT_ROOM, "saved", accountKey, "items", id);
 
+/* Хосын нийтлэг мэдээлэл: танилцсан огноо, төрсөн өдрүүд */
+const coupleDoc = () => doc(db, "rooms", CHAT_ROOM, "couple", "info");
+/* Өдөр бүрийн биелэлт — streak тоолоход */
+const daysCol = () => collection(db, "rooms", CHAT_ROOM, "days");
+const dayDoc = (d) => doc(db, "rooms", CHAT_ROOM, "days", d);
+
 /* Хүслийн жагсаалт — эзэн нь бичнэ, хос нь харна */
 const wishesCol = (key) => collection(db, "rooms", CHAT_ROOM, "wishes", key, "items");
 const wishDoc = (key, id) => doc(db, "rooms", CHAT_ROOM, "wishes", key, "items", id);
@@ -1675,7 +1682,12 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onP
   const [reactingTo, setReactingTo] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
   const [showDraw, setShowDraw] = useState(false);
+  const [showAttach, setShowAttach] = useState(false);
+  const [showStickers, setShowStickers] = useState(false);
   const [sendError, setSendError] = useState("");
+  const [replyTo, setReplyTo] = useState(null);   /* { id, senderName, preview } */
+  const [flashId, setFlashId] = useState(null);   /* иш татсан зурвас руу үсрэхэд гэрэлтүүлнэ */
+  const bubbleRefs = useRef(new Map());
   const [stickers, setStickers] = useState([]);
   const listRef = useRef(null);
   const lastPartnerBubbleRef = useRef(null);
@@ -1716,7 +1728,9 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onP
   const send = (payload) => {
     /* Алдааг чимээгүй залгихгүй — өмнө нь илгээгдээгүйг мэдэх арга байхгүй байв */
     addDoc(collection(db, "rooms", CHAT_ROOM, "messages"), {
-      sender: accountKey, senderName: profileName, createdAt: serverTimestamp(), ...payload,
+      sender: accountKey, senderName: profileName, createdAt: serverTimestamp(),
+      ...(replyTo ? { replyTo } : {}),
+      ...payload,
     }).catch((e) => setSendError(e?.code === "permission-denied"
       ? "Илгээх эрх алга. Firestore дүрмээ шалгана уу."
       : "Илгээж чадсангүй. Холболтоо шалгаад дахин оролдоно уу."));
@@ -1728,6 +1742,22 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onP
       tag: "chat",
       tab: "chat",
     });
+
+    setReplyTo(null); /* хариулт нэг л зурваст хамаарна */
+  };
+
+  /* Иш татсан зурвас руу үсэрч, богино хугацаанд гэрэлтүүлнэ */
+  const jumpTo = (id) => {
+    const el = bubbleRefs.current.get(id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setFlashId(id);
+    setTimeout(() => setFlashId((f) => (f === id ? null : f)), 1400);
+  };
+
+  const startReply = (m) => {
+    setReplyTo({ id: m.id, senderName: m.senderName || (m.sender === accountKey ? profileName : ""), preview: messagePreview(m).slice(0, 90) });
+    setReactingTo(null);
   };
 
   const onSend = () => {
@@ -1796,6 +1826,7 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onP
   };
 
   const onImageChange = async (e) => {
+    setShowAttach(false);
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
@@ -1858,16 +1889,36 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onP
                 {!mine && m.senderName && (
                   <div className="text-[9.5px] font-bold mb-1 px-1" style={{ color: C.inkSoft }}>{m.senderName}</div>
                 )}
-                <div ref={m.id === lastPartnerId ? lastPartnerBubbleRef : null}
+                <div
+                  ref={(el) => {
+                    if (el) bubbleRefs.current.set(m.id, el); else bubbleRefs.current.delete(m.id);
+                    if (m.id === lastPartnerId) lastPartnerBubbleRef.current = el;
+                  }}
                   onClick={() => setReactingTo((id) => (id === m.id ? null : m.id))}
-                  className={`max-w-[75%] rounded-[18px] text-[13px] font-semibold cursor-pointer ${media ? "p-1.5" : "px-3.5 py-2.5"}`}
-                  style={draw
-                    /* Зурсан зураг нь тунгалаг sticker — бөмбөлөггүй хөвнө */
-                    ? { background: "transparent", border: "none", padding: 0 }
-                    : {
-                      background: mine ? C.lilacDeep : C.card, color: mine ? "#fff" : C.ink,
-                      border: mine ? "none" : `1.5px solid ${C.line}`,
-                    }}>
+                  className={`max-w-[75%] rounded-[18px] text-[13px] font-semibold cursor-pointer ${media && !m.replyTo ? "p-1.5" : "px-3.5 py-2.5"}`}
+                  style={{
+                    ...(draw && !m.replyTo
+                      /* Зурсан зураг нь тунгалаг sticker — бөмбөлөггүй хөвнө */
+                      ? { background: "transparent", border: "none", padding: 0 }
+                      : {
+                        background: mine ? C.lilacDeep : C.card, color: mine ? "#fff" : C.ink,
+                        border: mine ? "none" : `1.5px solid ${C.line}`,
+                      }),
+                    ...(flashId === m.id ? { outline: `2.5px solid ${C.gold}`, outlineOffset: 2 } : {}),
+                    transition: "outline-color 300ms ease",
+                  }}>
+                  {m.replyTo && (
+                    <button onClick={(e) => { e.stopPropagation(); jumpTo(m.replyTo.id); }}
+                      className="w-full text-left rounded-[12px] px-2.5 py-1.5 mb-1.5 block active:scale-[0.98]"
+                      style={{
+                        background: mine ? "rgba(255,255,255,.18)" : C.cardIn,
+                        borderLeft: `3px solid ${mine ? "#fff" : C.lilacDeep}`,
+                        transition: "transform 120ms ease",
+                      }}>
+                      <span className="text-[9.5px] font-extrabold block opacity-90">{m.replyTo.senderName || "Зурвас"}</span>
+                      <span className="text-[11px] font-semibold block opacity-80 line-clamp-2">{m.replyTo.preview}</span>
+                    </button>
+                  )}
                   <MessageBody m={m} />
                 </div>
 
@@ -1881,6 +1932,11 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onP
                       </button>
                     ))}
                     <div className="w-[1.5px] self-stretch my-0.5" style={{ background: C.line2 }} />
+                    <button onClick={() => startReply(m)}
+                      className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90"
+                      style={{ color: C.inkSoft, transition: "transform 120ms ease" }} aria-label="Хариулах">
+                      <Reply size={14} strokeWidth={2.2} />
+                    </button>
                     <button onClick={() => toggleSave(m)}
                       className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90"
                       style={{ color: savedIds.has(m.id) ? C.lilacDeep : C.inkSoft, transition: "transform 120ms ease" }}
@@ -1964,36 +2020,94 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onP
           onSendSticker={(s) => sendDrawing(s.strokes || [])} />
       )}
 
-      <div className="safe-bottom-pad flex gap-1.5 items-center pb-1">
-        <button onClick={() => { setShowDraw(false); setShowReact((s) => !s); }}
+      {/* Хавсралтын панел. Дөрвөн товчийг оролтын мөрөнд зэрэгцүүлэхэд бичих
+          талбар хэт нарийсдаг байсан тул нэг "+"-ийн ард цуглуулав. */}
+      {showAttach && (
+        <div className="grid grid-cols-5 gap-2 mb-2">
+          {[
+            { key: "draw", label: "Зурах", icon: <Brush size={18} strokeWidth={2.2} />, c: C.lilacDeep,
+              on: () => { setShowAttach(false); setShowReact(false); setShowDraw(true); } },
+            { key: "sticker", label: "Sticker", icon: <Sticker size={18} strokeWidth={2.2} />, c: C.gold,
+              on: () => { setShowAttach(false); setShowReact(false); setShowStickers(true); } },
+            { key: "img", label: "Зураг", icon: <ImageIcon size={18} strokeWidth={2.2} />, c: C.sageDeep,
+              on: () => imgFileRef.current?.click() },
+            { key: "loc", label: "Байршил", icon: <MapPin size={18} strokeWidth={2.2} />, c: C.waterDeep,
+              on: () => { setShowAttach(false); sendLocation(); } },
+            { key: "react", label: "Реакц", icon: <Heart size={18} strokeWidth={2.2} />, c: C.peachDeep,
+              on: () => { setShowAttach(false); setShowDraw(false); setShowReact(true); } },
+          ].map((a) => (
+            <button key={a.key} onClick={a.on} disabled={a.key === "img" && uploading}
+              className="flex flex-col items-center gap-1 py-2 rounded-2xl active:scale-95 disabled:opacity-40"
+              style={{ background: C.card, border: `1.6px solid ${C.line}`, transition: "transform 150ms ease" }}>
+              <span className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: a.c, color: "#fff" }}>
+                {a.icon}
+              </span>
+              <span className="text-[9.5px] font-extrabold" style={{ color: C.inkSoft }}>{a.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Sticker сан — зурах самбар нээхгүйгээр шууд илгээх */}
+      {showStickers && (
+        <div className="mb-2">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11.5px] font-extrabold" style={{ color: C.ink }}>Миний sticker</span>
+            <button onClick={() => setShowStickers(false)} className="text-[11px] font-extrabold px-2 py-1 rounded-full"
+              style={{ color: C.inkSoft }}>Хаах</button>
+          </div>
+          {stickers.length === 0 ? (
+            <p className="text-[11.5px] font-semibold py-3 text-center" style={{ color: C.inkSoft }}>
+              Sticker алга. Зурах самбар дээр зураад 🔖 дар.
+            </p>
+          ) : (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {stickers.map((s) => (
+                <button key={s.id} onClick={() => { setShowStickers(false); sendDrawing(s.strokes || []); }}
+                  aria-label="Sticker илгээх"
+                  className="w-16 h-16 shrink-0 rounded-2xl overflow-hidden flex items-center justify-center active:scale-90"
+                  style={{ background: DRAW_CHECKER, border: `1.6px solid ${C.line2}`, transition: "transform 120ms ease" }}>
+                  <DrawingView strokes={s.strokes} />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Хариулж буй зурвас */}
+      {replyTo && (
+        <div className="flex items-center gap-2 mb-2 rounded-2xl px-3 py-2"
+          style={{ background: C.cardIn, borderLeft: `3px solid ${C.lilacDeep}` }}>
+          <div className="flex-1 min-w-0">
+            <div className="text-[9.5px] font-extrabold" style={{ color: C.lilacDeep }}>
+              {replyTo.senderName || "Зурвас"}-д хариулж байна
+            </div>
+            <div className="text-[11px] font-semibold truncate" style={{ color: C.inkSoft }}>{replyTo.preview}</div>
+          </div>
+          <button onClick={() => setReplyTo(null)} aria-label="Болих"
+            className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 active:scale-90"
+            style={{ color: C.inkSoft, transition: "transform 120ms ease" }}>
+            <X size={13} strokeWidth={2.6} />
+          </button>
+        </div>
+      )}
+
+      <div className="safe-bottom-pad flex gap-2 items-center pb-1">
+        <button onClick={() => {
+          setShowDraw(false); setShowReact(false); setShowStickers(false);
+          setShowAttach((s) => !s);
+        }}
           className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center active:scale-95"
           style={{
-            background: showReact ? C.lilacDeep : C.card, border: `1.8px solid ${C.line2}`,
-            color: showReact ? "#fff" : C.ink, transition: "transform 150ms ease",
-          }} aria-label="Реакц">
-          <Heart size={17} strokeWidth={2.2} />
-        </button>
-        <button onClick={() => { setShowReact(false); setShowDraw((s) => !s); }}
-          className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center active:scale-95"
-          style={{
-            background: showDraw ? C.lilacDeep : C.card, border: `1.8px solid ${C.line2}`,
-            color: showDraw ? "#fff" : C.ink, transition: "transform 150ms ease",
-          }} aria-label="Зурах">
-          <Brush size={17} strokeWidth={2.2} />
-        </button>
-        <button onClick={() => imgFileRef.current?.click()} disabled={uploading}
-          className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center active:scale-95 disabled:opacity-40"
-          style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink, transition: "transform 150ms ease" }}
-          aria-label="Зураг илгээх">
-          <ImageIcon size={17} strokeWidth={2.2} />
+            background: showAttach ? C.lilacDeep : C.card, border: `1.8px solid ${C.line2}`,
+            color: showAttach ? "#fff" : C.ink,
+            transform: showAttach ? "rotate(45deg)" : "none",
+            transition: "transform 200ms cubic-bezier(.2,.8,.3,1)",
+          }} aria-label="Хавсаргах">
+          <Plus size={19} strokeWidth={2.6} />
         </button>
         <input ref={imgFileRef} type="file" accept="image/*" onChange={onImageChange} className="hidden" />
-        <button onClick={sendLocation}
-          className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center active:scale-95"
-          style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink, transition: "transform 150ms ease" }}
-          aria-label="Байршил илгээх">
-          <MapPin size={17} strokeWidth={2.2} />
-        </button>
         <input value={text} onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && onSend()} placeholder="Мессеж бичих..."
           onFocus={() => {
@@ -2266,6 +2380,112 @@ function StatusCard({ accountKey, status }) {
           </button>
         )}
       </div>
+    </Card>
+  );
+}
+
+/* Нүүр дэлгэцийн "Бид хамт" карт — өдрийн тоо, ойрын ой, streak */
+function TogetherCard({ info, today, streak, partnerName, accountKey, partnerKey, onOpen }) {
+  const since = info?.since;
+  const nth = since ? dayNumber(since, today) : null;
+  const milestone = since ? nextMilestone(since, today) : null;
+
+  /* Хоёулангийн төрсөн өдрөөс ойрхныг нь сонгоно */
+  const bdays = [
+    { who: "Миний", mmdd: info?.bdays?.[accountKey] },
+    { who: `${partnerName}-ийн`, mmdd: partnerKey ? info?.bdays?.[partnerKey] : null },
+  ].map((b) => ({ ...b, next: nextBirthday(b.mmdd, today) })).filter((b) => b.next);
+  bdays.sort((a, b) => a.next.left - b.next.left);
+  const bday = bdays[0];
+
+  if (!nth && !streak && !bday) {
+    return (
+      <Card tint="#FEF6F1" className="mb-3" onClick={onOpen}>
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: C.peachDeep }}>
+            <CalendarHeart size={17} strokeWidth={2.2} color="#fff" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Тэмдэглэлт огноо</div>
+            <div className="text-[11.5px] font-bold" style={{ color: C.inkSoft }}>Хамт байж эхэлсэн өдрөө оруулаарай</div>
+          </div>
+          <ChevronLeft size={16} strokeWidth={2.6} style={{ color: C.inkSoft, transform: "rotate(180deg)" }} />
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card tint="#FEF6F1" className="mb-3" onClick={onOpen}>
+      <div className="flex items-center gap-3 mb-2">
+        <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: C.peachDeep }}>
+          <CalendarHeart size={17} strokeWidth={2.2} color="#fff" />
+        </div>
+        <div className="flex-1 min-w-0">
+          {nth ? (
+            <>
+              <div className="text-[15px] font-extrabold" style={{ color: C.ink }}>Хамт байгаа {nth} дахь өдөр</div>
+              {milestone && (
+                <div className="text-[11.5px] font-bold" style={{ color: C.peachDeep }}>
+                  {milestone.label} — {leftText(milestone.left)}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Тэмдэглэлт огноо</div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        {streak > 0 && (
+          <span className="text-[11.5px] font-extrabold px-2.5 py-1 rounded-full"
+            style={{ background: C.card, border: `1.4px solid ${C.line}`, color: C.gold }}>
+            🔥 {streak} өдөр дараалан
+          </span>
+        )}
+        {bday && (
+          <span className="text-[11.5px] font-extrabold px-2.5 py-1 rounded-full"
+            style={{ background: C.card, border: `1.4px solid ${C.line}`, color: C.lilacDeep }}>
+            🎂 {bday.who} төрсөн өдөр {leftText(bday.next.left)}
+          </span>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+/* ── Хосын огноонууд ── */
+function CoupleDatesCard({ accountKey, info }) {
+  const since = info?.since || "";
+  const bday = info?.bdays?.[accountKey] || "";
+
+  const saveSince = (v) => {
+    if (v && !isValidDay(v)) return;
+    setDoc(coupleDoc(), { since: v }, { merge: true }).catch(() => {});
+  };
+  /* Төрсөн өдрийг жилгүйгээр (MM-DD) хадгална — нас нь хамаагүй, ой нь чухал */
+  const saveBday = (v) => {
+    setDoc(coupleDoc(), { bdays: { [accountKey]: v ? v.slice(5) : "" } }, { merge: true }).catch(() => {});
+  };
+
+  const field = {
+    background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink,
+  };
+
+  return (
+    <Card tint="#FEF6F1" className="mb-4">
+      <div className="text-[12.5px] font-extrabold mb-2.5" style={{ color: C.ink }}>Тэмдэглэлт огноо</div>
+      <label className="block mb-2">
+        <span className="text-[11.5px] font-bold block mb-1" style={{ color: C.inkSoft }}>Хамт байж эхэлсэн өдөр</span>
+        <input type="date" value={since} onChange={(e) => saveSince(e.target.value)}
+          className="w-full rounded-full px-4 py-2.5 text-[15px] font-semibold outline-none" style={field} />
+      </label>
+      <label className="block">
+        <span className="text-[11.5px] font-bold block mb-1" style={{ color: C.inkSoft }}>Миний төрсөн өдөр</span>
+        <input type="date" value={bday ? `2000-${bday}` : ""} onChange={(e) => saveBday(e.target.value)}
+          className="w-full rounded-full px-4 py-2.5 text-[15px] font-semibold outline-none" style={field} />
+      </label>
     </Card>
   );
 }
@@ -2618,7 +2838,7 @@ function SavedChatScreen({ accountKey, onBack }) {
 }
 
 /* ── Профайл ── */
-function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, setAvatar, profileName, chibiEnabled, setChibiEnabled, savedCount, onOpenSaved, accountKey, myStatus, onBack }) {
+function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, setAvatar, profileName, chibiEnabled, setChibiEnabled, savedCount, onOpenSaved, accountKey, myStatus, coupleInfo, onBack }) {
   const [picking, setPicking] = useState(false);
   const fileRef = useRef(null);
   const done = items.filter((i) => i.done).length;
@@ -2681,6 +2901,8 @@ function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, 
       </div>
 
       <StatusCard accountKey={accountKey} status={myStatus} />
+
+      <CoupleDatesCard accountKey={accountKey} info={coupleInfo} />
 
       <ChangePasswordCard />
 
@@ -2920,7 +3142,7 @@ function LoginScreen() {
 }
 
 /* ── Нүүр ── */
-function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justReset, avatar, profileName, screenApps, appMin, partner, partnerName, partnerStatus, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
+function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justReset, avatar, profileName, screenApps, appMin, partner, partnerName, partnerStatus, coupleInfo, day, streak, accountKey, partnerKey, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
   const now = new Date();
   const greet = (clock.h < 11 ? "Өглөөний мэнд" : clock.h < 18 ? "Өдрийн мэнд" : "Оройн мэнд") + (profileName ? `, ${profileName}` : "");
   const done = items.filter((i) => i.done).length;
@@ -3040,6 +3262,9 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
 
       <HomeCarousel />
 
+      <TogetherCard info={coupleInfo} today={day} streak={streak} partnerName={partnerName}
+        accountKey={accountKey} partnerKey={partnerKey} onOpen={() => go("profile")} />
+
       <Card tint="#FFFAF0" className="mb-3" onClick={() => go("wish")}>
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: C.gold }}>
@@ -3131,6 +3356,8 @@ export default function App() {
   const [savedIds, setSavedIds] = useState(() => new Set());
   const [myStatus, setMyStatus] = useState("");
   const [partnerStatus, setPartnerStatus] = useState("");
+  const [coupleInfo, setCoupleInfo] = useState(null);
+  const [doneDays, setDoneDays] = useState([]);
   const [ml, setMl] = useState(saved.ml ?? 750);
   const [log, setLog] = useState(saved.log ?? [{ v: 500, t: "08:20" }, { v: 250, t: "11:05" }]);
   const [weight, setWeight] = useState(saved.weight ?? 60);
@@ -3204,6 +3431,33 @@ export default function App() {
   const accountKey = user ? accountKeyFromEmail(user.email) : null;
   const profileName = accountKey ? ACCOUNTS[accountKey].name : "";
   const partnerKey = accountKey === "andela" ? "neko" : accountKey === "neko" ? "andela" : null;
+
+  /* Усны зорилго биелмэгц тухайн өдрийг тэмдэглэнэ. Нэг өдөрт нэг л удаа
+     бичихийн тулд ref-ээр хаалга барина — ml өөрчлөгдөх бүрд бичихгүй. */
+  const markedDayRef = useRef(null);
+  useEffect(() => {
+    if (!accountKey || ml < goal) return;
+    if (markedDayRef.current === day) return;
+    markedDayRef.current = day;
+    setDoc(dayDoc(day), { d: day, [accountKey]: true }, { merge: true }).catch(() => {});
+  }, [accountKey, ml, goal, day]);
+
+  const streak = useMemo(
+    () => (accountKey && partnerKey ? streakCount(bothDoneDays(doneDays, accountKey, partnerKey), day) : 0),
+    [doneDays, accountKey, partnerKey, day]
+  );
+
+  useEffect(() => {
+    if (!user) return;
+    return onSnapshot(coupleDoc(), (s) => setCoupleInfo(s.data() || null), () => {});
+  }, [user]);
+
+  /* Сүүлийн 60 хоногийн биелэлт — streak тоолоход энэ хангалттай */
+  useEffect(() => {
+    if (!user) return;
+    const q = query(daysCol(), orderBy("d", "desc"), limit(60));
+    return onSnapshot(q, (s) => setDoneDays(s.docs.map((d) => d.data())), () => {});
+  }, [user]);
 
   useEffect(() => {
     if (!accountKey) { setMyStatus(""); return; }
@@ -3787,12 +4041,12 @@ export default function App() {
                 </div>
               )}
               <div key={tab} className={`${navDir === "back" ? "scr-back" : "scr-in"} ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
-                {tab === "home" && <HomeScreen go={go} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} partnerStatus={partnerStatus} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} chatUnread={chatUnread} />}
+                {tab === "home" && <HomeScreen go={go} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} partnerStatus={partnerStatus} coupleInfo={coupleInfo} day={day} streak={streak} accountKey={accountKey} partnerKey={partnerKey} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} chatUnread={chatUnread} />}
                 {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "list" && <ListScreen items={items} setItems={setItems} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "screen" && <ScreenTimeScreen {...{ screenApps, screenHistory, appMin }} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} partner={partnerStats} onBack={() => go("home")} />}
-                {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, setAvatar, profileName, chibiEnabled, setChibiEnabled }} gifCount={frames.length} savedCount={savedIds.size} onOpenSaved={() => go("saved")} accountKey={accountKey} myStatus={myStatus} onBack={() => go("home")} />}
+                {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, setAvatar, profileName, chibiEnabled, setChibiEnabled }} gifCount={frames.length} savedCount={savedIds.size} onOpenSaved={() => go("saved")} accountKey={accountKey} myStatus={myStatus} coupleInfo={coupleInfo} onBack={() => go("home")} />}
                 {tab === "saved" && <SavedChatScreen accountKey={accountKey} onBack={() => go("profile")} />}
                 {tab === "wish" && <WishScreen accountKey={accountKey} partnerKey={partnerKey}
                   partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} onBack={() => go("home")} />}
