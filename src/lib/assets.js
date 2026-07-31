@@ -50,3 +50,14 @@ export const CAR_GIF = IMG("car-gif.webp");
 
 export const GRAIN =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.22'/%3E%3C/svg%3E\")";
+
+/* Нүүр дэлгэцийн картуудын зурган икон ("7 button icon.png"-оос тайрсан).
+   Өөрсдөө squircle хэлбэртэй, цайвар дэвсгэртэй тул өнгөт дугуй хэрэггүй. */
+export const IC_DATES = IMG("ic-dates.webp");
+export const IC_CALENDAR = IMG("ic-calendar.webp");
+export const IC_QUESTION = IMG("ic-question.webp");
+export const IC_WISH = IMG("ic-wish.webp");
+export const IC_MAP = IMG("ic-map.webp");
+export const IC_NOTE = IMG("ic-note.webp");
+export const IC_CHAT = IMG("ic-chat.webp");
+export const IC_LOCATION = IMG("ic-location.webp");

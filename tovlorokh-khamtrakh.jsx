@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { ChevronLeft, Check, Copy, Bookmark, BookmarkCheck, Brush, Sticker, Wand2, Gift, CalendarHeart, Reply, Lock, HelpCircle, Mic, CalendarDays, Sun, Moon, SunMoon, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle, Bell, BellOff } from "lucide-react";
+import { ChevronLeft, X, Download, Share2, RefreshCw, Bell, BellOff } from "lucide-react";
 import { collection, addDoc, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, arrayUnion, increment } from "firebase/firestore";
 import { onAuthStateChanged, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 import { pushSupported, pushPermission, requestPushToken, notifyPartner, NOTIFY_ENDPOINT } from "./src/push.js";
@@ -24,6 +24,7 @@ import {
   BG_MAIN, GRAIN, WELCOME_HERO, NAV_HOME, NAV_WATER, NAV_LIST, NAV_TIME, NAV_GIF,
   CAR_LIST, CAR_WATER, CAR_SCREEN, CAR_GIF,
   LOAD_0, LOAD_25, LOAD_50, LOAD_75, LOAD_90, LOAD_100, LOAD_ALMOST, LOAD_DONE, LOAD_FINISH,
+  IC_DATES, IC_CALENDAR, IC_QUESTION, IC_WISH, IC_MAP, IC_CHAT, IC_LOCATION,
 } from "./src/lib/assets.js";
 import { TZ, ubDay, ubParts, pad, DAYS } from "./src/lib/time.js";
 import { compressImage, compressDataUrl } from "./src/lib/image.js";
@@ -233,9 +234,7 @@ function LocationCard() {
   return (
     <Card tint="#FFFAF0">
       <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: C.gold }}>
-          <MapPin size={17} strokeWidth={2.2} color="#fff" />
-        </div>
+        <img src={IC_LOCATION} alt="" className="w-10 h-10 shrink-0 object-contain" />
         <div className="flex-1 min-w-0">
           <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Байршил</div>
           <div className="text-[11.5px] truncate font-medium" style={{ color: C.inkSoft }}>
@@ -391,9 +390,7 @@ function TogetherCard({ info, today, streak, partnerName, accountKey, partnerKey
     return (
       <Card tint="#FEF6F1" className="mb-3" onClick={onOpen}>
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: C.peachDeep }}>
-            <CalendarHeart size={17} strokeWidth={2.2} color="#fff" />
-          </div>
+          <img src={IC_DATES} alt="" className="w-10 h-10 shrink-0 object-contain" />
           <div className="flex-1 min-w-0">
             <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Тэмдэглэлт огноо</div>
             <div className="text-[11.5px] font-bold" style={{ color: C.inkSoft }}>Хамт байж эхэлсэн өдрөө оруулаарай</div>
@@ -407,9 +404,7 @@ function TogetherCard({ info, today, streak, partnerName, accountKey, partnerKey
   return (
     <Card tint="#FEF6F1" className="mb-3" onClick={onOpen}>
       <div className="flex items-center gap-3 mb-2">
-        <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: C.peachDeep }}>
-          <CalendarHeart size={17} strokeWidth={2.2} color="#fff" />
-        </div>
+        <img src={IC_DATES} alt="" className="w-10 h-10 shrink-0 object-contain" />
         <div className="flex-1 min-w-0">
           {nth ? (
             <>
@@ -638,9 +633,7 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
 
       <Card tint="#F4FBFE" className="mb-3" onClick={() => go("cal")}>
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: C.waterDeep }}>
-            <CalendarDays size={17} strokeWidth={2.2} color="#fff" />
-          </div>
+          <img src={IC_CALENDAR} alt="" className="w-10 h-10 shrink-0 object-contain" />
           <div className="flex-1 min-w-0">
             <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Хамтын календарь</div>
             <div className="text-[11.5px] font-bold truncate" style={{ color: C.inkSoft }}>
@@ -653,9 +646,7 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
 
       <Card tint="#F8F4FC" className="mb-3" onClick={() => go("qa")}>
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: C.lilacDeep }}>
-            <HelpCircle size={17} strokeWidth={2.2} color="#fff" />
-          </div>
+          <img src={IC_QUESTION} alt="" className="w-10 h-10 shrink-0 object-contain" />
           <div className="flex-1 min-w-0">
             <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Өдрийн асуулт</div>
             <div className="text-[11.5px] font-bold truncate" style={{ color: C.inkSoft }}>{questionForDay(day)}</div>
@@ -666,9 +657,7 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
 
       <Card tint="#FFFAF0" className="mb-3" onClick={() => go("wish")}>
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: C.gold }}>
-            <Gift size={17} strokeWidth={2.2} color="#fff" />
-          </div>
+          <img src={IC_WISH} alt="" className="w-10 h-10 shrink-0 object-contain" />
           <div className="flex-1 min-w-0">
             <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Хүслийн жагсаалт</div>
             <div className="text-[11.5px] font-bold" style={{ color: C.inkSoft }}>Юу хүсэж байгаагаа бичих</div>
@@ -679,9 +668,7 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
 
       <Card tint="#F4FBFE" className="mb-3" onClick={() => go("map")}>
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: C.waterDeep }}>
-            <MapPin size={17} strokeWidth={2.2} color="#fff" />
-          </div>
+          <img src={IC_MAP} alt="" className="w-10 h-10 shrink-0 object-contain" />
           <div className="flex-1 min-w-0">
             <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Газрын зураг</div>
             <div className="text-[11.5px] font-bold" style={{ color: C.inkSoft }}>Хоёулангийнхаа байршлыг шууд харах</div>
@@ -692,12 +679,12 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
 
       <Card tint="#F8F4FC" className="mb-3" onClick={() => go("chat")}>
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 relative" style={{ background: C.lilacDeep }}>
-            <MessageCircle size={17} strokeWidth={2.2} color="#fff" />
+          <div className="relative shrink-0">
+            <img src={IC_CHAT} alt="" className="w-10 h-10 object-contain" />
             {/* Уншаагүй зурвасын тэмдэг */}
             {chatUnread && (
               <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full"
-                style={{ background: C.peachDeep, border: "2px solid #F8F4FC" }} />
+                style={{ background: C.peachDeep, border: `2px solid ${C.card}` }} />
             )}
           </div>
           <div className="flex-1 min-w-0">
