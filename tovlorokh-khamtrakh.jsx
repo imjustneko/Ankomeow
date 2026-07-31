@@ -1109,23 +1109,31 @@ function assistShape(p) {
      САНАМЖ: дан dev хүрэлцэхгүй — тэгш өнцөгтийн dev ч бага гардаг тул
      хамгийн ойр/хол радиусын харьцааг заавал шалгана (дөрвөлжинд √2 ≈ 1.41). */
   const rMax = Math.max(...rs), rMin = Math.min(...rs);
-  if (dev < 0.17 && mean > 25 && rMax / (rMin || 1) < 1.3) {
+  const round = rMax / (rMin || 1); /* дугуй байдал: тойрогт ≈1, дөрвөлжинд ≈1.41 */
+
+  const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const w = x1 - x0, h = y1 - y0;
+
+  /* Тэгш өнцөгтийг ЭХЛЭЭД шалгана.
+     САНАМЖ: ирмэгийн зөвшөөрөл 13% байхад ТӨГС ТОЙРОГ ч цэгийнхээ 94%-аар
+     таарч, тойрог дөрвөлжин болж хувирдаг байв (45° дээрх цэг ирмэгээс
+     радиусынхаа 29% буюу өргөний 14.6% зайд байдаг). 6% болгож чангатгаад,
+     нэмээд дугуй биш болохыг (round > 1.25) шаардана. */
+  if (w > 40 && h > 40 && round > 1.25) {
+    const onEdge = pts.filter((q) =>
+      Math.min(q[0] - x0, x1 - q[0]) < w * 0.06 || Math.min(q[1] - y0, y1 - q[1]) < h * 0.06).length / n;
+    if (onEdge > 0.9) return { p: [x0, y0, x1, y0, x1, y1, x0, y1, x0, y0], k: "rect" };
+  }
+
+  /* Тойрог: төвөөс бүх цэг ойролцоо ижил зайд */
+  if (dev < 0.22 && mean > 25 && round < 1.35) {
     const out = [];
     for (let i = 0; i <= 48; i++) {
       const t = (i / 48) * Math.PI * 2;
       out.push(Math.round(cx + mean * Math.cos(t)), Math.round(cy + mean * Math.sin(t)));
     }
     return { p: out, k: "circle" };
-  }
-
-  /* Тэгш өнцөгт: цэгүүдийн дийлэнх нь хүрээний ирмэг дээр байрлана */
-  const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
-  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-  const w = x1 - x0, h = y1 - y0;
-  if (w > 40 && h > 40) {
-    const onEdge = pts.filter((q) =>
-      Math.min(q[0] - x0, x1 - q[0]) < w * 0.13 || Math.min(q[1] - y0, y1 - q[1]) < h * 0.13).length / n;
-    if (onEdge > 0.82) return { p: [x0, y0, x1, y0, x1, y1, x0, y1, x0, y0], k: "rect" };
   }
   return null;
 }
@@ -2616,12 +2624,28 @@ function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, 
   const done = items.filter((i) => i.done).length;
   const stTotal = screenApps.reduce((s, a) => s + a.min, 0) + appMin;
 
-  const onUpload = (e) => {
+  const [uploadErr, setUploadErr] = useState("");
+
+  /* Утасны зураг 3–8MB байдаг. Шахалтгүйгээр data URL болговол localStorage-ийн
+     ~5MB хязгаараас хальж QuotaExceededError шидэгддэг байв — зураг солигдохгүй.
+     Аватар хамгийн ихдээ 512px харагддаг тул тэр хэмжээнд нь шахна (~60KB). */
+  const onUpload = async (e) => {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => { setAvatar(reader.result); setPicking(false); };
-    reader.readAsDataURL(file);
+    setUploadErr("");
+    try {
+      let quality = 0.8;
+      let dataUrl = await compressImage(file, 512, quality);
+      while (dataUrl.length > 300000 && quality > 0.4) {
+        quality -= 0.15;
+        dataUrl = await compressImage(file, 512, quality);
+      }
+      setAvatar(dataUrl);
+      setPicking(false);
+    } catch {
+      setUploadErr("Зургийг уншиж чадсангүй. Өөр зураг сонгоно уу.");
+    }
   };
 
   const exitApp = () => { window.close(); };
@@ -2677,6 +2701,9 @@ function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, 
             style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink, transition: "transform 150ms ease" }}>
             <Upload size={15} strokeWidth={2.4} /> Өөрийн зураг оруулах
           </button>
+          {uploadErr && (
+            <div className="text-[11.5px] font-bold mt-2 leading-snug" style={{ color: C.peachDeep }}>{uploadErr}</div>
+          )}
           <input ref={fileRef} type="file" accept="image/*" onChange={onUpload} className="hidden" />
         </Card>
       )}
@@ -3251,7 +3278,12 @@ export default function App() {
 
   /* төлөв бүрийг утсан дээр хадгалж, апп хаагаад дахин нээхэд алдагдахгүй */
   useEffect(() => {
-    localStorage.setItem(STORE_KEY, JSON.stringify({ ml, log, weight, items, day, avatar, screenApps, screenHistory, appSeconds }));
+    /* try/catch ЗААВАЛ хэрэгтэй: localStorage дүүрэх (том аватар, Safari private
+       горим) үед setItem нь QuotaExceededError шиднэ. Effect дотор баригдаагүй
+       алдаа React-ийн мод бүхэлдээ тасалдаг тул аппыг унагадаг байв. */
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify({ ml, log, weight, items, day, avatar, screenApps, screenHistory, appSeconds }));
+    } catch {}
   }, [ml, log, weight, items, day, avatar, screenApps, screenHistory, appSeconds]);
 
   /* Ankomeow дотор өнгөрүүлсэн бодит цагийг хэмжинэ.
