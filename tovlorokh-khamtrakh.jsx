@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { ChevronLeft, Check, Copy, Bookmark, BookmarkCheck, Brush, Sticker, Wand2, Gift, CalendarHeart, Reply, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle, Bell, BellOff } from "lucide-react";
+import { ChevronLeft, Check, Copy, Bookmark, BookmarkCheck, Brush, Sticker, Wand2, Gift, CalendarHeart, Reply, Lock, HelpCircle, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle, Bell, BellOff } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, arrayUnion, increment } from "firebase/firestore";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
@@ -10,6 +10,8 @@ import { usePullToRefresh } from "./src/hooks/usePullToRefresh.js";
 import ChibiPet from "./src/chibi/ChibiPet.jsx";
 import { createPokeSender } from "./src/chibi/poke.js";
 import { hasUnread } from "./src/chibi/chatSignal.js";
+import { questionForDay } from "./src/lib/questions.js";
+import { distanceM, prettyDistance, metersPerPx, placeAt, geofenceEvent, DEFAULT_RADIUS } from "./src/lib/geo.js";
 import { dayNumber, nextMilestone, nextBirthday, streakCount, bothDoneDays, leftText, isValidDay } from "./src/lib/couple.js";
 import { vibrationPattern, canVibrate, buzzMessage, shouldBuzz } from "./src/chibi/buzz.js";
 
@@ -997,6 +999,13 @@ const chatTime = (ts) => {
 const savedItemsCol = (accountKey) => collection(db, "rooms", CHAT_ROOM, "saved", accountKey, "items");
 const savedItemDoc = (accountKey, id) => doc(db, "rooms", CHAT_ROOM, "saved", accountKey, "items", id);
 
+/* Өдрийн асуулт — өдөр бүрд нэг баримт, хоёулангийн хариулт дотор нь */
+const qaCol = () => collection(db, "rooms", CHAT_ROOM, "qa");
+const qaDoc = (d) => doc(db, "rooms", CHAT_ROOM, "qa", d);
+/* Хадгалсан газрууд (geofence) */
+const placesCol = () => collection(db, "rooms", CHAT_ROOM, "places");
+const placeDocRef = (id) => doc(db, "rooms", CHAT_ROOM, "places", id);
+
 /* Хосын нийтлэг мэдээлэл: танилцсан огноо, төрсөн өдрүүд */
 const coupleDoc = () => doc(db, "rooms", CHAT_ROOM, "couple", "info");
 /* Өдөр бүрийн биелэлт — streak тоолоход */
@@ -1387,20 +1396,7 @@ function pxToLatLng(x, y, z) {
   ];
 }
 
-/* Хоёр цэгийн хоорондох зай (метр) — haversine */
-function distanceM(a, b) {
-  const R = 6371000;
-  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
-  const la1 = (a.lat * Math.PI) / 180, la2 = (b.lat * Math.PI) / 180;
-  const s = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
-}
-
-const prettyDistance = (m) => (m < 1000 ? `${Math.round(m)} м` : `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} км`);
-
-/* Нэг пикселд ногдох метр — байршлын нарийвчлалын тойргийг зурахад */
-const metersPerPx = (lat, z) => (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** z;
+/* distanceM, prettyDistance, metersPerPx нь src/lib/geo.js-д (тесттэй) */
 
 /* Firestore Timestamp эсвэл энгийн миллисекундыг хоёуланг нь хүлээж авна */
 const agoText = (ts) => {
@@ -2455,6 +2451,117 @@ function TogetherCard({ info, today, streak, partnerName, accountKey, partnerKey
   );
 }
 
+/* ── Өдрийн асуулт ── */
+function DailyQuestionScreen({ accountKey, partnerKey, partnerName, profileName, today, onBack }) {
+  const [rows, setRows] = useState([]);
+  const [draft, setDraft] = useState("");
+  const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    if (!accountKey) return;
+    /* Сүүлийн 30 хоног — түүхийг доор нь харуулна */
+    const q = query(qaCol(), orderBy("d", "desc"), limit(30));
+    return onSnapshot(q, (s) => setRows(s.docs.map((x) => ({ id: x.id, ...x.data() }))), () => {});
+  }, [accountKey]);
+
+  const todayRow = rows.find((r) => r.d === today);
+  const myAnswer = todayRow?.[accountKey] || "";
+  const partnerAnswer = partnerKey ? todayRow?.[partnerKey] || "" : "";
+
+  useEffect(() => {
+    if (!editing) setDraft(myAnswer);
+  }, [myAnswer, editing]);
+
+  const save = () => {
+    const t = draft.trim();
+    if (!t) return;
+    setDoc(qaDoc(today), { d: today, q: questionForDay(today), [accountKey]: t.slice(0, 600) }, { merge: true })
+      .catch(() => {});
+    setEditing(false);
+    notifyPartner(auth, {
+      to: partnerKey,
+      title: profileName,
+      body: "Өдрийн асуултад хариуллаа 💭",
+      tag: "qa",
+      tab: "qa",
+    });
+  };
+
+  const past = rows.filter((r) => r.d !== today && (r[accountKey] || (partnerKey && r[partnerKey])));
+
+  return (
+    <div>
+      <Header title="Өдрийн асуулт" sub="Өдөрт нэг асуулт, хоёулаа" onBack={onBack} />
+
+      <Card tint="#F8F4FC" className="mb-3">
+        <div className="text-[10px] font-extrabold mb-1.5" style={{ color: C.lilacDeep }}>ӨНӨӨДӨР</div>
+        <div className="text-[15px] font-extrabold leading-snug mb-3" style={{ color: C.ink }}>
+          {questionForDay(today)}
+        </div>
+
+        <textarea value={draft} onChange={(e) => { setEditing(true); setDraft(e.target.value.slice(0, 600)); }}
+          placeholder="Хариултаа бичээрэй…" rows={3}
+          className="w-full rounded-[18px] px-4 py-3 text-[15px] font-medium outline-none resize-none"
+          style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
+
+        <button onClick={save} disabled={!draft.trim() || draft.trim() === myAnswer}
+          className="w-full mt-2 h-10 rounded-full text-[12.5px] font-extrabold flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-35"
+          style={{ background: C.lilacDeep, color: "#fff", transition: "transform 150ms ease" }}>
+          <Check size={15} strokeWidth={2.6} /> {myAnswer ? "Шинэчлэх" : "Хариулах"}
+        </button>
+      </Card>
+
+      <Card tint={partnerAnswer && myAnswer ? "#FEF6F1" : "#FFFDF8"} className="mb-4">
+        <div className="text-[10px] font-extrabold mb-1.5" style={{ color: C.peachDeep }}>
+          {(partnerName || "ХАМТРАГЧ").toUpperCase()}
+        </div>
+        {!partnerAnswer ? (
+          <div className="text-[12.5px] font-bold leading-snug" style={{ color: C.inkSoft }}>
+            Хараахан хариулаагүй байна.
+          </div>
+        ) : !myAnswer ? (
+          /* Эхлээд өөрөө хариулна — тэгэхгүй бол нөгөөгийнхөө үгээр нөлөөлүүлнэ */
+          <div className="flex items-center gap-2">
+            <Lock size={14} strokeWidth={2.4} style={{ color: C.inkSoft }} />
+            <span className="text-[12.5px] font-bold" style={{ color: C.inkSoft }}>
+              Хариулсан байна. Эхлээд өөрөө хариулаарай.
+            </span>
+          </div>
+        ) : (
+          <div className="text-[14px] font-semibold leading-relaxed whitespace-pre-wrap" style={{ color: C.ink }}>
+            {partnerAnswer}
+          </div>
+        )}
+      </Card>
+
+      {past.length > 0 && (
+        <>
+          <div className="text-[13px] font-extrabold mb-2.5" style={{ color: C.ink }}>Өмнөх өдрүүд</div>
+          <div className="space-y-2.5">
+            {past.map((r) => (
+              <Card key={r.id} tint="#FFFDF8">
+                <div className="text-[10px] font-bold mb-1" style={{ color: C.inkSoft }}>{r.d}</div>
+                <div className="text-[12.5px] font-extrabold mb-2 leading-snug" style={{ color: C.ink }}>
+                  {r.q || questionForDay(r.d)}
+                </div>
+                {[
+                  { name: profileName || "Би", a: r[accountKey], c: C.lilacDeep },
+                  { name: partnerName, a: partnerKey ? r[partnerKey] : "", c: C.peachDeep },
+                ].filter((x) => x.a).map((x, i) => (
+                  <div key={i} className="mb-1.5 last:mb-0">
+                    <span className="text-[10px] font-extrabold" style={{ color: x.c }}>{x.name}</span>
+                    <div className="text-[12.5px] font-semibold leading-snug whitespace-pre-wrap" style={{ color: C.ink }}>{x.a}</div>
+                  </div>
+                ))}
+              </Card>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ── Хосын огноонууд ── */
 function CoupleDatesCard({ accountKey, info }) {
   const since = info?.since || "";
@@ -2618,9 +2725,16 @@ function LiveMapScreen({ accountKey, partnerKey, profileName, partnerName, avata
   const [err, setErr] = useState("");
   const [view, setView] = useState({ center: UB, zoom: 12 });
   const [tick, setTick] = useState(0);       /* "хэдэн минутын өмнө"-г шинэчлэхэд */
+  const [places, setPlaces] = useState([]);
+  const [newPlace, setNewPlace] = useState("");
   const inited = useRef(false);
   const lastWrite = useRef(0);
   const lastPos = useRef(null);
+  /* Хамгийн сүүлд ямар газарт байсан — дахин ачаалсан ч давтаж мэдэгдэхгүйн
+     тулд localStorage-д үлдээнэ. */
+  const placeIdRef = useRef(localStorage.getItem("ankomeow-place") || null);
+  const placesRef = useRef([]);
+  useEffect(() => { placesRef.current = places; }, [places]);
 
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 20000);
@@ -2656,6 +2770,24 @@ function LiveMapScreen({ accountKey, partnerKey, profileName, partnerName, avata
           lastPos.current = pos;
           setDoc(liveDoc(accountKey), { ...pos, at: serverTimestamp() }).catch(() => {});
         }
+
+        /* Geofence. ӨӨРИЙН байрлалыг шалгаад ХАМТРАГЧ РУУ мэдэгдэл илгээнэ —
+           хөтөч зөвхөн өөрийн байршлыг мэдэрдэг тул энэ л зөв тал. */
+        const here = placeAt(placesRef.current, pos);
+        const ev = geofenceEvent(placeIdRef.current, here);
+        if (ev) {
+          placeIdRef.current = ev.kind === "enter" ? ev.id : null;
+          if (placeIdRef.current) localStorage.setItem("ankomeow-place", placeIdRef.current);
+          else localStorage.removeItem("ankomeow-place");
+          const left = placesRef.current.find((p) => p.id === ev.id);
+          notifyPartner(auth, {
+            to: partnerKey,
+            title: profileName,
+            body: ev.kind === "enter" ? `📍 ${ev.name} дээр ирлээ` : `👋 ${left?.name || "газраас"} гарлаа`,
+            tag: "geo",
+            tab: "map",
+          });
+        }
       },
       (e) => setErr(e.code === 1
         ? "Байршлын зөвшөөрөл өгөөгүй байна. Хөтчийн тохиргооноос зөвшөөрнө үү."
@@ -2672,6 +2804,25 @@ function LiveMapScreen({ accountKey, partnerKey, profileName, partnerName, avata
     }, () => {});
     return unsub;
   }, [partnerKey]);
+
+  useEffect(() => {
+    if (!accountKey) return;
+    return onSnapshot(placesCol(), (s) => setPlaces(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => {});
+  }, [accountKey]);
+
+  const addPlace = () => {
+    const name = newPlace.trim();
+    /* Газрын зургийн ТӨВД байгаа цэгийг хадгална — өөрийн байршил дээр биш
+       ч гэсэн (жишээ нь хамтрагчийн ажлыг) тэмдэглэж болно. */
+    if (!name) return;
+    addDoc(placesCol(), {
+      name: name.slice(0, 40), lat: view.center.lat, lng: view.center.lng,
+      radius: DEFAULT_RADIUS, createdAt: serverTimestamp(),
+    }).catch(() => {});
+    setNewPlace("");
+  };
+
+  const removePlace = (id) => deleteDoc(placeDocRef(id)).catch(() => {});
 
   /* Эхний байршил мэдэгдмэгц нэг л удаа автоматаар төвлөрнө */
   useEffect(() => {
@@ -2729,6 +2880,55 @@ function LiveMapScreen({ accountKey, partnerKey, profileName, partnerName, avata
         </div>
         {err && (
           <div className="text-[11.5px] font-bold mt-2 leading-snug" style={{ color: C.peachDeep }}>{err}</div>
+        )}
+      </Card>
+
+      <Card tint="#F5FBF3" className="mb-3">
+        <div className="text-[12.5px] font-extrabold mb-1" style={{ color: C.ink }}>Миний газрууд</div>
+        <div className="text-[11px] font-bold mb-2.5 leading-snug" style={{ color: C.inkSoft }}>
+          Эдгээр газарт ирэх/гарахад чинь хамтрагчид мэдэгдэнэ. Байршил хуваалцаж,
+          апп нээлттэй байх үед ажиллана.
+        </div>
+
+        <div className="flex gap-2 mb-2">
+          <input value={newPlace} onChange={(e) => setNewPlace(e.target.value.slice(0, 40))}
+            onKeyDown={(e) => e.key === "Enter" && addPlace()} placeholder="Газрын нэр (жишээ: Гэр)"
+            enterKeyHint="done"
+            className="flex-1 min-w-0 rounded-full px-4 py-2 text-[15px] font-medium outline-none"
+            style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
+          <button onClick={addPlace} aria-label="Газрын зургийн төвийг хадгалах"
+            className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center active:scale-95"
+            style={{ background: C.sageDeep, color: "#fff", transition: "transform 150ms ease" }}>
+            <Plus size={17} strokeWidth={2.6} />
+          </button>
+        </div>
+        <div className="text-[10.5px] font-bold mb-2" style={{ color: C.inkSoft }}>
+          Газрын зургийн ТӨВД байгаа цэг хадгалагдана (радиус {DEFAULT_RADIUS}м).
+        </div>
+
+        {places.length === 0 ? (
+          <p className="text-[11.5px] font-semibold py-1" style={{ color: C.inkSoft }}>Хадгалсан газар алга.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {places.map((p) => (
+              <div key={p.id} className="flex items-center gap-2 rounded-full px-3 py-2"
+                style={{ background: C.card, border: `1.4px solid ${C.line}` }}>
+                <button onClick={() => setView({ center: { lat: p.lat, lng: p.lng }, zoom: 16 })}
+                  className="flex-1 min-w-0 text-left active:scale-[0.98]" style={{ transition: "transform 120ms ease" }}>
+                  <span className="text-[13px] font-extrabold block truncate" style={{ color: C.ink }}>{p.name}</span>
+                  {me?.lat != null && (
+                    <span className="text-[10px] font-bold" style={{ color: C.inkSoft }}>
+                      надаас {prettyDistance(distanceM(p, me))}
+                    </span>
+                  )}
+                </button>
+                <button onClick={() => removePlace(p.id)} aria-label="Устгах"
+                  className="shrink-0 active:scale-90" style={{ color: C.inkSoft, transition: "transform 120ms ease" }}>
+                  <Trash2 size={14} strokeWidth={2.2} />
+                </button>
+              </div>
+            ))}
+          </div>
         )}
       </Card>
 
@@ -3264,6 +3464,19 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
 
       <TogetherCard info={coupleInfo} today={day} streak={streak} partnerName={partnerName}
         accountKey={accountKey} partnerKey={partnerKey} onOpen={() => go("profile")} />
+
+      <Card tint="#F8F4FC" className="mb-3" onClick={() => go("qa")}>
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: C.lilacDeep }}>
+            <HelpCircle size={17} strokeWidth={2.2} color="#fff" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Өдрийн асуулт</div>
+            <div className="text-[11.5px] font-bold truncate" style={{ color: C.inkSoft }}>{questionForDay(day)}</div>
+          </div>
+          <ChevronLeft size={16} strokeWidth={2.6} style={{ color: C.inkSoft, transform: "rotate(180deg)" }} />
+        </div>
+      </Card>
 
       <Card tint="#FFFAF0" className="mb-3" onClick={() => go("wish")}>
         <div className="flex items-center gap-3">
@@ -4048,6 +4261,9 @@ export default function App() {
                 {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, setAvatar, profileName, chibiEnabled, setChibiEnabled }} gifCount={frames.length} savedCount={savedIds.size} onOpenSaved={() => go("saved")} accountKey={accountKey} myStatus={myStatus} coupleInfo={coupleInfo} onBack={() => go("home")} />}
                 {tab === "saved" && <SavedChatScreen accountKey={accountKey} onBack={() => go("profile")} />}
+                {tab === "qa" && <DailyQuestionScreen accountKey={accountKey} partnerKey={partnerKey}
+                  partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} profileName={profileName}
+                  today={day} onBack={() => go("home")} />}
                 {tab === "wish" && <WishScreen accountKey={accountKey} partnerKey={partnerKey}
                   partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} onBack={() => go("home")} />}
                 {tab === "map" && <LiveMapScreen accountKey={accountKey} partnerKey={partnerKey} profileName={profileName}
