@@ -65,6 +65,11 @@ service cloud.firestore {
       allow read, write: if isCouple();
     }
 
+    /* Хамтын календарь — хоёулаа нэмж, устгана */
+    match /rooms/ankomeow-couple/events/{eventId} {
+      allow read, write: if isCouple();
+    }
+
     /* Хадгалсан газрууд (geofence) — хоёулаа нэмж, устгана */
     match /rooms/ankomeow-couple/places/{placeId} {
       allow read, write: if isCouple();

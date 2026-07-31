@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { ChevronLeft, Check, Copy, Bookmark, BookmarkCheck, Brush, Sticker, Wand2, Gift, CalendarHeart, Reply, Lock, HelpCircle, Mic, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle, Bell, BellOff } from "lucide-react";
+import { ChevronLeft, Check, Copy, Bookmark, BookmarkCheck, Brush, Sticker, Wand2, Gift, CalendarHeart, Reply, Lock, HelpCircle, Mic, CalendarDays, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle, Bell, BellOff } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, arrayUnion, increment } from "firebase/firestore";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
@@ -11,6 +11,7 @@ import ChibiPet from "./src/chibi/ChibiPet.jsx";
 import { createPokeSender } from "./src/chibi/poke.js";
 import { hasUnread } from "./src/chibi/chatSignal.js";
 import { questionForDay } from "./src/lib/questions.js";
+import { MONTHS, WEEKDAYS, monthKey, monthGrid, addMonths, eventsOn, upcoming, isDue } from "./src/lib/calendar.js";
 import { distanceM, prettyDistance, metersPerPx, placeAt, geofenceEvent, DEFAULT_RADIUS } from "./src/lib/geo.js";
 import { dayNumber, nextMilestone, nextBirthday, streakCount, bothDoneDays, leftText, isValidDay } from "./src/lib/couple.js";
 import { vibrationPattern, canVibrate, buzzMessage, shouldBuzz } from "./src/chibi/buzz.js";
@@ -1050,6 +1051,9 @@ function useBlob(id, inline) {
 /* Өдрийн асуулт — өдөр бүрд нэг баримт, хоёулангийн хариулт дотор нь */
 const qaCol = () => collection(db, "rooms", CHAT_ROOM, "qa");
 const qaDoc = (d) => doc(db, "rooms", CHAT_ROOM, "qa", d);
+/* Хамтын календарь — төлөвлөгөө ба дурсамж */
+const eventsCol = () => collection(db, "rooms", CHAT_ROOM, "events");
+const eventDocRef = (id) => doc(db, "rooms", CHAT_ROOM, "events", id);
 /* Хадгалсан газрууд (geofence) */
 const placesCol = () => collection(db, "rooms", CHAT_ROOM, "places");
 const placeDocRef = (id) => doc(db, "rooms", CHAT_ROOM, "places", id);
@@ -2675,6 +2679,201 @@ function TogetherCard({ info, today, streak, partnerName, accountKey, partnerKey
   );
 }
 
+/* ── Хамтын календарь ── */
+function CalendarScreen({ accountKey, partnerKey, partnerName, profileName, today, coupleInfo, onBack }) {
+  const [events, setEvents] = useState([]);
+  const [ym, setYm] = useState(monthKey(today));
+  const [sel, setSel] = useState(today);
+  const [title, setTitle] = useState("");
+  const [time, setTime] = useState("");
+  const [memory, setMemory] = useState(false); /* дурсамж уу, төлөвлөгөө үү */
+
+  useEffect(() => {
+    if (!accountKey) return;
+    return onSnapshot(query(eventsCol(), orderBy("d", "desc")),
+      (s) => setEvents(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => {});
+  }, [accountKey]);
+
+  const grid = useMemo(() => monthGrid(ym), [ym]);
+  const dayEvents = eventsOn(events, sel);
+  const soon = upcoming(events.filter((e) => !e.memory), today, 4);
+  const memories = events.filter((e) => e.memory).slice(0, 20);
+  const marked = useMemo(() => new Set(events.map((e) => e.d)), [events]);
+
+  const add = () => {
+    const t = title.trim();
+    if (!t) return;
+    addDoc(eventsCol(), {
+      d: sel, t: time || "", title: t.slice(0, 80), memory,
+      by: accountKey, createdAt: serverTimestamp(),
+    }).catch(() => {});
+    setTitle(""); setTime("");
+    notifyPartner(auth, {
+      to: partnerKey, title: profileName,
+      body: memory ? `💛 Дурсамж нэмлээ: ${t.slice(0, 40)}` : `🗓 ${sel} — ${t.slice(0, 40)}`,
+      tag: "cal", tab: "cal",
+    });
+  };
+
+  const remove = (id) => deleteDoc(eventDocRef(id)).catch(() => {});
+
+  const [y, m] = ym.split("-").map(Number);
+
+  return (
+    <div>
+      <Header title="Хамтын календарь" sub="Төлөвлөгөө ба дурсамж" onBack={onBack} />
+
+      <Card tint="#F4FBFE" className="mb-3">
+        <div className="flex items-center justify-between mb-2.5">
+          <button onClick={() => setYm(addMonths(ym, -1))} aria-label="Өмнөх сар"
+            className="w-8 h-8 rounded-full flex items-center justify-center active:scale-90"
+            style={{ background: C.card, border: `1.5px solid ${C.line2}`, color: C.ink, transition: "transform 120ms ease" }}>
+            <ChevronLeft size={15} strokeWidth={2.6} />
+          </button>
+          <div className="text-[13.5px] font-extrabold" style={{ color: C.ink }}>{y} · {MONTHS[m - 1]}</div>
+          <button onClick={() => setYm(addMonths(ym, 1))} aria-label="Дараагийн сар"
+            className="w-8 h-8 rounded-full flex items-center justify-center active:scale-90"
+            style={{ background: C.card, border: `1.5px solid ${C.line2}`, color: C.ink, transition: "transform 120ms ease" }}>
+            <ChevronLeft size={15} strokeWidth={2.6} style={{ transform: "rotate(180deg)" }} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-7 gap-1 mb-1">
+          {WEEKDAYS.map((w) => (
+            <div key={w} className="text-[9.5px] font-extrabold text-center py-1" style={{ color: C.inkSoft }}>{w}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {grid.map((c, i) => {
+            const isToday = c.d === today;
+            const isSel = c.d === sel;
+            return (
+              <button key={i} onClick={() => setSel(c.d)}
+                className="aspect-square rounded-xl flex flex-col items-center justify-center active:scale-90"
+                style={{
+                  background: isSel ? C.waterDeep : isToday ? C.cardIn : "transparent",
+                  color: isSel ? "#fff" : c.inMonth ? C.ink : C.inkSoft,
+                  opacity: c.inMonth ? 1 : 0.4,
+                  border: isToday && !isSel ? `1.5px solid ${C.waterDeep}` : "1.5px solid transparent",
+                  transition: "transform 120ms ease",
+                }}>
+                <span className="text-[11.5px] font-extrabold leading-none">{Number(c.d.slice(-2))}</span>
+                {marked.has(c.d) && (
+                  <span className="w-1 h-1 rounded-full mt-0.5"
+                    style={{ background: isSel ? "#fff" : C.peachDeep }} />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+
+      <Card tint="#FFFDF8" className="mb-3">
+        <div className="text-[12.5px] font-extrabold mb-2" style={{ color: C.ink }}>{sel}</div>
+        {dayEvents.length === 0 ? (
+          <p className="text-[11.5px] font-semibold mb-2.5" style={{ color: C.inkSoft }}>Энэ өдөр юу ч алга.</p>
+        ) : (
+          <div className="space-y-1.5 mb-2.5">
+            {dayEvents.map((e) => (
+              <div key={e.id} className="flex items-center gap-2 rounded-[16px] px-3 py-2"
+                style={{ background: C.card, border: `1.4px solid ${C.line}` }}>
+                <span className="w-1.5 h-8 rounded-full shrink-0" style={{ background: e.memory ? C.gold : C.waterDeep }} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-extrabold truncate" style={{ color: C.ink }}>{e.title}</div>
+                  <div className="text-[10px] font-bold" style={{ color: C.inkSoft }}>
+                    {e.memory ? "Дурсамж" : e.t || "Өдрийн турш"} · {e.by === accountKey ? (profileName || "Би") : partnerName}
+                  </div>
+                </div>
+                <button onClick={() => remove(e.id)} aria-label="Устгах" className="shrink-0 active:scale-90"
+                  style={{ color: C.inkSoft, transition: "transform 120ms ease" }}>
+                  <Trash2 size={14} strokeWidth={2.2} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-2 mb-2">
+          <input value={title} onChange={(e) => setTitle(e.target.value.slice(0, 80))}
+            onKeyDown={(e) => e.key === "Enter" && add()} placeholder={memory ? "Юу болсон бэ?" : "Юу төлөвлөж байна?"}
+            enterKeyHint="done"
+            className="flex-1 min-w-0 rounded-full px-4 py-2 text-[15px] font-medium outline-none"
+            style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
+          <button onClick={add} aria-label="Нэмэх"
+            className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center active:scale-95"
+            style={{ background: memory ? C.gold : C.waterDeep, color: "#fff", transition: "transform 150ms ease" }}>
+            <Plus size={17} strokeWidth={2.6} />
+          </button>
+        </div>
+        <div className="flex gap-2 items-center">
+          {!memory && (
+            <input type="time" value={time} onChange={(e) => setTime(e.target.value)}
+              className="rounded-full px-3 py-1.5 text-[13px] font-semibold outline-none"
+              style={{ background: C.card, border: `1.6px solid ${C.line2}`, color: C.ink }} />
+          )}
+          <button onClick={() => setMemory((v) => !v)}
+            className="px-3 py-1.5 rounded-full text-[11.5px] font-extrabold active:scale-95"
+            style={{
+              background: memory ? C.gold : C.card, color: memory ? "#fff" : C.inkSoft,
+              border: `1.6px solid ${memory ? C.gold : C.line2}`, transition: "transform 150ms ease",
+            }}>
+            {memory ? "💛 Дурсамж" : "🗓 Төлөвлөгөө"}
+          </button>
+        </div>
+      </Card>
+
+      {soon.length > 0 && (
+        <>
+          <div className="text-[13px] font-extrabold mb-2.5" style={{ color: C.ink }}>Ойрын төлөвлөгөө</div>
+          <div className="space-y-2 mb-4">
+            {soon.map((e) => (
+              <div key={e.id} className="flex items-center gap-3 rounded-[18px] px-4 py-2.5"
+                style={{ background: C.card, border: `1.5px solid ${C.line}` }}>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-extrabold truncate" style={{ color: C.ink }}>{e.title}</div>
+                  <div className="text-[10.5px] font-bold" style={{ color: C.inkSoft }}>{e.d} {e.t}</div>
+                </div>
+                <span className="text-[11px] font-extrabold shrink-0" style={{ color: C.waterDeep }}>
+                  {leftText(e.left)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {memories.length > 0 && (
+        <>
+          <div className="text-[13px] font-extrabold mb-2.5" style={{ color: C.ink }}>Дурсамжийн урсгал</div>
+          <div className="space-y-2">
+            {memories.map((e) => {
+              const ago = coupleInfo?.since ? dayNumber(coupleInfo.since, e.d) : null;
+              return (
+                <div key={e.id} className="flex gap-3">
+                  <div className="flex flex-col items-center shrink-0">
+                    <span className="w-2.5 h-2.5 rounded-full mt-2" style={{ background: C.gold }} />
+                    <span className="flex-1 w-[2px] my-1" style={{ background: C.line }} />
+                  </div>
+                  <div className="flex-1 min-w-0 pb-1">
+                    <div className="text-[10px] font-bold" style={{ color: C.inkSoft }}>
+                      {e.d}{ago ? ` · хамт байсан ${ago} дахь өдөр` : ""}
+                    </div>
+                    <div className="text-[13.5px] font-extrabold leading-snug" style={{ color: C.ink }}>{e.title}</div>
+                  </div>
+                  <button onClick={() => remove(e.id)} aria-label="Устгах" className="shrink-0 self-start mt-1.5 active:scale-90"
+                    style={{ color: C.inkSoft, transition: "transform 120ms ease" }}>
+                    <Trash2 size={13} strokeWidth={2.2} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ── Өдрийн асуулт ── */
 function DailyQuestionScreen({ accountKey, partnerKey, partnerName, profileName, today, onBack }) {
   const [rows, setRows] = useState([]);
@@ -3568,7 +3767,7 @@ function LoginScreen() {
 }
 
 /* ── Нүүр ── */
-function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justReset, avatar, profileName, screenApps, appMin, partner, partnerName, partnerStatus, coupleInfo, day, streak, accountKey, partnerKey, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
+function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justReset, avatar, profileName, screenApps, appMin, partner, partnerName, partnerStatus, coupleInfo, day, streak, nextEvent, accountKey, partnerKey, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
   const now = new Date();
   const greet = (clock.h < 11 ? "Өглөөний мэнд" : clock.h < 18 ? "Өдрийн мэнд" : "Оройн мэнд") + (profileName ? `, ${profileName}` : "");
   const done = items.filter((i) => i.done).length;
@@ -3691,6 +3890,21 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
       <TogetherCard info={coupleInfo} today={day} streak={streak} partnerName={partnerName}
         accountKey={accountKey} partnerKey={partnerKey} onOpen={() => go("profile")} />
 
+      <Card tint="#F4FBFE" className="mb-3" onClick={() => go("cal")}>
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: C.waterDeep }}>
+            <CalendarDays size={17} strokeWidth={2.2} color="#fff" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Хамтын календарь</div>
+            <div className="text-[11.5px] font-bold truncate" style={{ color: C.inkSoft }}>
+              {nextEvent ? `${nextEvent.title} — ${leftText(nextEvent.left)}` : "Төлөвлөгөө ба дурсамж"}
+            </div>
+          </div>
+          <ChevronLeft size={16} strokeWidth={2.6} style={{ color: C.inkSoft, transform: "rotate(180deg)" }} />
+        </div>
+      </Card>
+
       <Card tint="#F8F4FC" className="mb-3" onClick={() => go("qa")}>
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: C.lilacDeep }}>
@@ -3797,6 +4011,7 @@ export default function App() {
   const [partnerStatus, setPartnerStatus] = useState("");
   const [coupleInfo, setCoupleInfo] = useState(null);
   const [doneDays, setDoneDays] = useState([]);
+  const [events, setEvents] = useState([]);
   const [ml, setMl] = useState(saved.ml ?? 750);
   const [log, setLog] = useState(saved.log ?? [{ v: 500, t: "08:20" }, { v: 250, t: "11:05" }]);
   const [weight, setWeight] = useState(saved.weight ?? 60);
@@ -3881,6 +4096,31 @@ export default function App() {
     setDoc(dayDoc(day), { d: day, [accountKey]: true }, { merge: true }).catch(() => {});
   }, [accountKey, ml, goal, day]);
 
+  const nextEvent = useMemo(() => upcoming(events.filter((e) => !e.memory), day, 1)[0] || null, [events, day]);
+
+  /* Цаг нь болсон сануулгыг НЭГ л удаа хөтчийн мэдэгдлээр харуулна.
+     Апп нээлттэй үед л ажиллана — PWA дэвсгэрт таймер барьж чадахгүй. */
+  const firedRef = useRef(new Set());
+  useEffect(() => {
+    if (!events.length) return;
+    const check = () => {
+      const { h, m } = ubParts();
+      for (const e of events) {
+        if (e.memory || firedRef.current.has(e.id)) continue;
+        if (!isDue(e, day, h * 60 + m)) continue;
+        firedRef.current.add(e.id);
+        try {
+          if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+            new Notification("Ankomeow", { body: `🗓 ${e.title}`, tag: `cal-${e.id}` });
+          }
+        } catch {}
+      }
+    };
+    check();
+    const id = setInterval(check, 30000);
+    return () => clearInterval(id);
+  }, [events, day]);
+
   const streak = useMemo(
     () => (accountKey && partnerKey ? streakCount(bothDoneDays(doneDays, accountKey, partnerKey), day) : 0),
     [doneDays, accountKey, partnerKey, day]
@@ -3889,6 +4129,12 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     return onSnapshot(coupleDoc(), (s) => setCoupleInfo(s.data() || null), () => {});
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    return onSnapshot(query(eventsCol(), orderBy("d", "desc"), limit(200)),
+      (s) => setEvents(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => {});
   }, [user]);
 
   /* Сүүлийн 60 хоногийн биелэлт — streak тоолоход энэ хангалттай */
@@ -4481,13 +4727,16 @@ export default function App() {
                 </div>
               )}
               <div key={tab} className={`${navDir === "back" ? "scr-back" : "scr-in"} ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
-                {tab === "home" && <HomeScreen go={go} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} partnerStatus={partnerStatus} coupleInfo={coupleInfo} day={day} streak={streak} accountKey={accountKey} partnerKey={partnerKey} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} chatUnread={chatUnread} />}
+                {tab === "home" && <HomeScreen go={go} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} partnerStatus={partnerStatus} coupleInfo={coupleInfo} day={day} streak={streak} nextEvent={nextEvent} accountKey={accountKey} partnerKey={partnerKey} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} chatUnread={chatUnread} />}
                 {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "list" && <ListScreen items={items} setItems={setItems} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "screen" && <ScreenTimeScreen {...{ screenApps, screenHistory, appMin }} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, setAvatar, profileName, chibiEnabled, setChibiEnabled }} gifCount={frames.length} savedCount={savedIds.size} onOpenSaved={() => go("saved")} accountKey={accountKey} myStatus={myStatus} coupleInfo={coupleInfo} onBack={() => go("home")} />}
                 {tab === "saved" && <SavedChatScreen accountKey={accountKey} onBack={() => go("profile")} />}
+                {tab === "cal" && <CalendarScreen accountKey={accountKey} partnerKey={partnerKey}
+                  partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} profileName={profileName}
+                  today={day} coupleInfo={coupleInfo} onBack={() => go("home")} />}
                 {tab === "qa" && <DailyQuestionScreen accountKey={accountKey} partnerKey={partnerKey}
                   partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} profileName={profileName}
                   today={day} onBack={() => go("home")} />}
