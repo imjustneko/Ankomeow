@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { ChevronLeft, Check, Copy, Bookmark, BookmarkCheck, Brush, Sticker, Wand2, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle, Bell, BellOff } from "lucide-react";
+import { ChevronLeft, Check, Copy, Bookmark, BookmarkCheck, Brush, Sticker, Wand2, Gift, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle, Bell, BellOff } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, arrayUnion, increment } from "firebase/firestore";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
@@ -995,6 +995,10 @@ const chatTime = (ts) => {
    үлдэнэ. Баримтын id нь эх зурвасын id — нэг зурвас хоёр удаа хадгалагдахгүй. */
 const savedItemsCol = (accountKey) => collection(db, "rooms", CHAT_ROOM, "saved", accountKey, "items");
 const savedItemDoc = (accountKey, id) => doc(db, "rooms", CHAT_ROOM, "saved", accountKey, "items", id);
+
+/* Хүслийн жагсаалт — эзэн нь бичнэ, хос нь харна */
+const wishesCol = (key) => collection(db, "rooms", CHAT_ROOM, "wishes", key, "items");
+const wishDoc = (key, id) => doc(db, "rooms", CHAT_ROOM, "wishes", key, "items", id);
 
 /* Бодит цагийн байршил — эзэн нь бичиж, хос нь уншина */
 const liveDoc = (key) => doc(db, "rooms", CHAT_ROOM, "live", key);
@@ -2258,6 +2262,117 @@ function StatusCard({ accountKey, status }) {
   );
 }
 
+/* ── Хүслийн жагсаалт ── */
+function WishScreen({ accountKey, partnerKey, partnerName, onBack }) {
+  const [mine, setMine] = useState(true);
+  const [myWishes, setMyWishes] = useState([]);
+  const [partnerWishes, setPartnerWishes] = useState([]);
+  const [text, setText] = useState("");
+
+  /* Хоёуланг нь зэрэг сонсоно — таб солиход хүлээх шаардлагагүй */
+  useEffect(() => {
+    if (!accountKey) return;
+    const q = query(wishesCol(accountKey), orderBy("createdAt", "desc"));
+    return onSnapshot(q, (s) => setMyWishes(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => {});
+  }, [accountKey]);
+
+  useEffect(() => {
+    if (!partnerKey) return;
+    const q = query(wishesCol(partnerKey), orderBy("createdAt", "desc"));
+    return onSnapshot(q, (s) => setPartnerWishes(s.docs.map((d) => ({ id: d.id, ...d.data() }))), () => {});
+  }, [partnerKey]);
+
+  const list = mine ? myWishes : partnerWishes;
+  const done = list.filter((w) => w.done).length;
+
+  const add = () => {
+    const t = text.trim();
+    if (!t) return;
+    addDoc(wishesCol(accountKey), { text: t.slice(0, 200), done: false, createdAt: serverTimestamp() }).catch(() => {});
+    setText("");
+  };
+
+  const toggle = (w) => updateDoc(wishDoc(accountKey, w.id), { done: !w.done }).catch(() => {});
+  const remove = (id) => deleteDoc(wishDoc(accountKey, id)).catch(() => {});
+
+  return (
+    <div>
+      <Header title="Хүслийн жагсаалт"
+        sub={list.length ? `${done}/${list.length} биелсэн` : "Юу хүсэж байгаагаа бичээрэй"}
+        onBack={onBack} />
+
+      {partnerKey && <MineToggle mine={mine} setMine={setMine} partnerName={partnerName} />}
+
+      <Card tint="#FFFAF0" className="mb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0" style={{ background: C.gold }}>
+            <Gift size={22} strokeWidth={2.2} color="#fff" />
+          </div>
+          <div className="flex-1">
+            <div className="text-[13px] font-extrabold mb-2" style={{ color: C.ink }}>
+              {mine ? "Миний хүслүүд" : `${partnerName}-ийн хүслүүд`}
+            </div>
+            <Bar value={done} max={Math.max(list.length, 1)} color={C.gold} />
+          </div>
+        </div>
+      </Card>
+
+      {mine && (
+        <div className="flex gap-2 mb-4">
+          <input value={text} onChange={(e) => setText(e.target.value.slice(0, 200))}
+            onKeyDown={(e) => e.key === "Enter" && add()} placeholder="Юу хүсэж байна?"
+            enterKeyHint="done" autoCapitalize="sentences" autoCorrect="off"
+            className="flex-1 min-w-0 rounded-full px-5 py-2.5 text-[16px] font-medium outline-none"
+            style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
+          <button onClick={add}
+            className="shrink-0 w-[42px] h-[42px] rounded-full flex items-center justify-center active:scale-95"
+            style={{ background: C.gold, color: "#fff", transition: "transform 150ms ease" }} aria-label="Нэмэх">
+            <Plus size={19} strokeWidth={2.6} />
+          </button>
+        </div>
+      )}
+
+      {list.length === 0 ? (
+        <p className="text-[12px] py-8 text-center font-medium leading-relaxed" style={{ color: C.inkSoft }}>
+          {mine
+            ? "Одоогоор хүсэл алга.\nЮу ч бай — жижиг ч бай, том ч бай бичээрэй."
+            : `${partnerName} хараахан хүслээ бичээгүй байна.`}
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {list.map((w) => (
+            <div key={w.id} className="flex items-center gap-3 rounded-[20px] px-4 py-3"
+              style={{ background: w.done ? "#FFFAF0" : C.card, border: `1.5px solid ${C.line}` }}>
+              {mine ? (
+                <button onClick={() => toggle(w)}
+                  className="w-[24px] h-[24px] rounded-full flex items-center justify-center shrink-0"
+                  style={{ border: `2px solid ${w.done ? C.gold : C.line2}`, background: w.done ? C.gold : "transparent" }}
+                  aria-label="Биелсэн гэж тэмдэглэх">
+                  {w.done && <Check size={14} strokeWidth={3.2} color="#fff" />}
+                </button>
+              ) : (
+                <span className="w-[24px] h-[24px] rounded-full flex items-center justify-center shrink-0"
+                  style={{ border: `2px solid ${w.done ? C.gold : C.line2}`, background: w.done ? C.gold : "transparent" }}>
+                  {w.done && <Check size={14} strokeWidth={3.2} color="#fff" />}
+                </span>
+              )}
+              <span className="flex-1 text-[14px] font-semibold leading-snug" style={{
+                color: w.done ? C.inkSoft : C.ink, textDecoration: w.done ? "line-through" : "none",
+              }}>{w.text}</span>
+              {mine && (
+                <button onClick={() => remove(w.id)} className="shrink-0 active:scale-90"
+                  style={{ color: C.inkSoft, transition: "transform 120ms ease" }} aria-label="Устгах">
+                  <Trash2 size={15} strokeWidth={2.2} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Бодит цагийн газрын зураг ── */
 const UB = { lat: 47.9184, lng: 106.9177 }; /* хаана ч байршил мэдэгдэхгүй үеийн эхлэл */
 
@@ -2897,6 +3012,19 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
       )}
 
       <HomeCarousel />
+
+      <Card tint="#FFFAF0" className="mb-3" onClick={() => go("wish")}>
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: C.gold }}>
+            <Gift size={17} strokeWidth={2.2} color="#fff" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Хүслийн жагсаалт</div>
+            <div className="text-[11.5px] font-bold" style={{ color: C.inkSoft }}>Юу хүсэж байгаагаа бичих</div>
+          </div>
+          <ChevronLeft size={16} strokeWidth={2.6} style={{ color: C.inkSoft, transform: "rotate(180deg)" }} />
+        </div>
+      </Card>
 
       <Card tint="#F4FBFE" className="mb-3" onClick={() => go("map")}>
         <div className="flex items-center gap-3">
@@ -3634,6 +3762,8 @@ export default function App() {
                 {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, setAvatar, profileName, chibiEnabled, setChibiEnabled }} gifCount={frames.length} savedCount={savedIds.size} onOpenSaved={() => go("saved")} accountKey={accountKey} myStatus={myStatus} onBack={() => go("home")} />}
                 {tab === "saved" && <SavedChatScreen accountKey={accountKey} onBack={() => go("profile")} />}
+                {tab === "wish" && <WishScreen accountKey={accountKey} partnerKey={partnerKey}
+                  partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} onBack={() => go("home")} />}
                 {tab === "map" && <LiveMapScreen accountKey={accountKey} partnerKey={partnerKey} profileName={profileName}
                   partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} avatar={avatar} partnerAvatar={partnerStats?.avatar}
                   onBack={() => go("home")} />}
