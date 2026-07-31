@@ -53,6 +53,16 @@ service cloud.firestore {
       allow read, write: if isCouple() && key == myKey();
     }
 
+    /* Өдрийн асуулт — хоёулаа өөрийн хариултаа бичнэ */
+    match /rooms/ankomeow-couple/qa/{dayId} {
+      allow read, write: if isCouple();
+    }
+
+    /* Хадгалсан газрууд (geofence) — хоёулаа нэмж, устгана */
+    match /rooms/ankomeow-couple/places/{placeId} {
+      allow read, write: if isCouple();
+    }
+
     /* Хосын нийтлэг огноо (танилцсан өдөр, төрсөн өдрүүд) — хоёулаа засна */
     match /rooms/ankomeow-couple/couple/{docId} {
       allow read, write: if isCouple();
