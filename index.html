@@ -33,9 +33,9 @@
     <script>
       (function () {
         try {
-          var m = localStorage.getItem("ankomeow-theme") || "light";
-          var dark = m === "dark" || (m === "auto" &&
-            window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          /* ЗӨВХӨН зориудаар "dark" сонгосон үед харанхуй. Системийн
+             тохиргоог (prefers-color-scheme) огт харгалзахгүй. */
+          var dark = localStorage.getItem("ankomeow-theme") === "dark";
           var bg = dark ? "#191419" : "#F4EADA";
           document.documentElement.style.colorScheme = dark ? "dark" : "light";
           var st = document.createElement("style");

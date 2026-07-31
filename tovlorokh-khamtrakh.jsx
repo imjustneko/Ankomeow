@@ -747,18 +747,19 @@ export default function App() {
      useSwipeBack/usePullToRefresh дотоод listener хэзээ ч холбогдохгүй
      үлдэх эрсдэлтэй байсан. setScreenEl callback ref нь element бодитоор
      mount/unmount болох мөч бүрд дуудагддаг тул энэ асуудлыг арилгана. */
-  /* Өнгөний горим. ӨГӨГДМӨЛ нь "light" — апп цагаанаараа нээгддэг байх ёстой.
-     Утасны системийн харанхуй тохиргоог автоматаар дагахгүй: хэрэглэгч
-     профайл дээрээс зориудаар л шөнийн горимыг асаана. */
-  const [themeMode, setThemeMode] = useState(() => localStorage.getItem("ankomeow-theme") || "light");
+  /* Өнгөний горим — ЗӨВХӨН "light" ба "dark".
+
+     Апп үргэлж цагаанаараа нээгдэнэ. Утасны системийн харанхуй тохиргоог
+     огт дагахгүй: хэрэглэгч профайл дээрээс зориудаар дарсан үед л
+     харанхуй болно.
+
+     Хуучин "auto" сонголтыг цагаан руу шилжүүлнэ — өмнө нь auto хадгалсан
+     төхөөрөмж дээр систем харанхуй байвал апп хар нээгдсээр байх байлаа. */
+  const [themeMode, setThemeMode] = useState(() =>
+    localStorage.getItem("ankomeow-theme") === "dark" ? "dark" : "light");
   useEffect(() => {
     localStorage.setItem("ankomeow-theme", themeMode);
-    const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
-    const resolve = () => applyTheme(themeMode === "auto" ? (mq?.matches ? "dark" : "light") : themeMode);
-    resolve();
-    if (themeMode !== "auto" || !mq) return;
-    mq.addEventListener?.("change", resolve);
-    return () => mq.removeEventListener?.("change", resolve);
+    applyTheme(themeMode);
   }, [themeMode]);
 
   const [screenEl, setScreenEl] = useState(null);

@@ -6,7 +6,7 @@ import { Bar, Card, Header } from "../ui/primitives.jsx";
 import { auth, coupleDoc, profileDoc } from "../lib/firebase.js";
 import { serverTimestamp, setDoc } from "firebase/firestore";
 import { isValidDay } from "../lib/couple.js";
-import { Bookmark, Check, ChevronLeft, LogOut, Moon, Pencil, Sun, SunMoon, Upload } from "lucide-react";
+import { Bookmark, Check, ChevronLeft, LogOut, Moon, Pencil, Sun, Upload } from "lucide-react";
 import { AVATARS } from "../lib/assets.js";
 import { compressImage } from "../lib/image.js";
 
@@ -291,11 +291,10 @@ export function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, a
       <Card tint="#F4FBFE" className="mb-3">
         <div className="text-[13px] font-extrabold mb-0.5" style={{ color: C.ink }}>Өнгөний горим</div>
         <div className="text-[11.5px] font-bold mb-2.5" style={{ color: C.inkSoft }}>
-          Авто нь утасныхаа тохиргоог дагана
+          Апп үргэлж цагаанаар нээгдэнэ
         </div>
         <div className="flex gap-2">
           {[
-            { k: "auto", label: "Авто", icon: <SunMoon size={14} strokeWidth={2.4} /> },
             { k: "light", label: "Өдөр", icon: <Sun size={14} strokeWidth={2.4} /> },
             { k: "dark", label: "Шөнө", icon: <Moon size={14} strokeWidth={2.4} /> },
           ].map((o) => (
