@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { ChevronLeft, Check, Copy, Bookmark, BookmarkCheck, Brush, Sticker, Wand2, Gift, CalendarHeart, Reply, Lock, HelpCircle, Mic, CalendarDays, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle, Bell, BellOff } from "lucide-react";
+import { ChevronLeft, Check, Copy, Bookmark, BookmarkCheck, Brush, Sticker, Wand2, Gift, CalendarHeart, Reply, Lock, HelpCircle, Mic, CalendarDays, Sun, Moon, SunMoon, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle, Bell, BellOff } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, arrayUnion, increment } from "firebase/firestore";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
@@ -99,25 +99,63 @@ const CAR_WATER = IMG("car-water.webp");
 const CAR_SCREEN = IMG("car-screen.webp");
 const CAR_GIF = IMG("car-gif.webp");
 
-const C = {
-  paper: "#FDF8EF",
-  paper2: "#F4EADA",
-  card: "#FFFDF8",
-  cardIn: "#F2E9DA",
-  ink: "#5C4A3A",
-  inkSoft: "#A08C77",
-  line: "rgba(92,74,58,0.15)",
-  line2: "rgba(92,74,58,0.32)",
-  peach: "#F5AF8E",
-  peachDeep: "#E8825C",
-  sage: "#AFCDA6",
-  sageDeep: "#7CAF71",
-  water: "#8AD0EC",
-  waterDeep: "#3FA3D1",
-  gold: "#E3BC61",
-  lilac: "#C6B0DD",
-  lilacDeep: "#9E82C4",
+/* ── Өнгө ──
+   Утга бүр CSS хувьсагч руу заана. Аппын 400 гаруй байрлалд `C.ink` гэх мэтээр
+   inline style-д тавигддаг тул хувьсагчийн утгыг сольмогц бүх дэлгэц шууд
+   өөрчлөгдөнө — нэг ч дуудлагыг гар аргаар засах шаардлагагүй. */
+const COLOR_KEYS = [
+  "paper", "paper2", "card", "cardIn", "ink", "inkSoft", "line", "line2",
+  "peach", "peachDeep", "sage", "sageDeep", "water", "waterDeep", "gold", "lilac", "lilacDeep",
+];
+const C = Object.fromEntries(COLOR_KEYS.map((k) => [k, `var(--c-${k})`]));
+
+const THEMES = {
+  light: {
+    paper: "#FDF8EF", paper2: "#F4EADA", card: "#FFFDF8", cardIn: "#F2E9DA",
+    ink: "#5C4A3A", inkSoft: "#A08C77",
+    line: "rgba(92,74,58,0.15)", line2: "rgba(92,74,58,0.32)",
+    peach: "#F5AF8E", peachDeep: "#E8825C", sage: "#AFCDA6", sageDeep: "#7CAF71",
+    water: "#8AD0EC", waterDeep: "#3FA3D1", gold: "#E3BC61",
+    lilac: "#C6B0DD", lilacDeep: "#9E82C4",
+    /* Картын өнгөт сүүдэр бүрэн хүчээрээ */
+    tintMix: "100%", shadow: "0 2px 0 rgba(92,74,58,.05), 0 1px 0 rgba(255,255,255,.8) inset",
+    /* Дэвсгэр зургийн дээгүүр тавих хөшиг */
+    veilA: "rgba(253,248,239,.82)", veilB: "rgba(244,234,218,.88)",
+    splashA: "rgba(253,248,239,.9)", splashB: "rgba(244,234,218,.94)",
+    frameBlend: "multiply, normal, normal",
+  },
+  dark: {
+    paper: "#211C25", paper2: "#191419", card: "#2B242F", cardIn: "#372E3C",
+    ink: "#F0E7DC", inkSoft: "#A99BB2",
+    line: "rgba(240,231,220,0.14)", line2: "rgba(240,231,220,0.30)",
+    /* Гүн өнгүүдийг харанхуй дээр уншигдахуйц болгож бага зэрэг тодруулав */
+    peach: "#F0A98A", peachDeep: "#F0946E", sage: "#A8CC9E", sageDeep: "#8FC583",
+    water: "#8FD3EE", waterDeep: "#5FBBE0", gold: "#EBC873",
+    lilac: "#CBB6E0", lilacDeep: "#B79BDB",
+    /* Цайвар сүүдрийг харанхуй карт дээр бүдэг болгоно, эс бөгөөс цоолно */
+    tintMix: "16%", shadow: "0 2px 10px rgba(0,0,0,.28)",
+    /* Цайвар дэвсгэр зургийг харанхуй хөшигөөр дарна — эс бөгөөс шөнө нүд гялбана */
+    veilA: "rgba(33,28,37,.88)", veilB: "rgba(25,20,25,.93)",
+    splashA: "rgba(33,28,37,.94)", splashB: "rgba(25,20,25,.96)",
+    frameBlend: "overlay, normal, normal",
+  },
 };
+
+export function applyTheme(mode) {
+  const t = THEMES[mode] || THEMES.light;
+  const root = document.documentElement;
+  for (const k of COLOR_KEYS) root.style.setProperty(`--c-${k}`, t[k]);
+  root.style.setProperty("--tint-mix", t.tintMix);
+  root.style.setProperty("--card-shadow", t.shadow);
+  root.style.setProperty("--veil-a", t.veilA);
+  root.style.setProperty("--veil-b", t.veilB);
+  root.style.setProperty("--splash-a", t.splashA);
+  root.style.setProperty("--splash-b", t.splashB);
+  root.style.setProperty("--frame-blend", t.frameBlend);
+  root.style.colorScheme = mode === "dark" ? "dark" : "light";
+  document.body.style.background = t.paper2;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", t.paper2);
+}
 
 const GRAIN =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.22'/%3E%3C/svg%3E\")";
@@ -257,9 +295,13 @@ function Card({ children, onClick, tint, className = "" }) {
     <div onClick={onClick}
       className={`rounded-[26px] p-4 ${onClick ? "cursor-pointer active:scale-[0.97]" : ""} ${className}`}
       style={{
-        background: tint ? `linear-gradient(158deg, ${tint} 0%, ${C.card} 130%)` : C.card,
+        /* color-mix: шөнийн горимд цайвар сүүдрийг 16% болгож сулруулна —
+           эс бөгөөс харанхуй карт дээр цагаан толбо мэт цоолно. */
+        background: tint
+          ? `linear-gradient(158deg, color-mix(in srgb, ${tint} var(--tint-mix), ${C.card}) 0%, ${C.card} 130%)`
+          : C.card,
         border: `1.5px solid ${C.line}`,
-        boxShadow: "0 2px 0 rgba(92,74,58,.05), 0 1px 0 rgba(255,255,255,.8) inset",
+        boxShadow: "var(--card-shadow)",
         transition: "transform 180ms ease",
       }}>
       {children}
@@ -893,7 +935,7 @@ function GifScreen({ frames, setFrames, partner, onBack }) {
       {partner && <MineToggle mine={mine} setMine={setMine} partnerName={partner.name} />}
 
       <div className="rounded-[26px] overflow-hidden mb-4 flex items-center justify-center"
-        style={{ background: "#F8F4FC", border: `1.8px solid ${C.line}`, aspectRatio: "4/3" }}>
+        style={{ background: C.cardIn, border: `1.8px solid ${C.line}`, aspectRatio: "4/3" }}>
         {activeFrames.length ? (
           <img src={activeFrames[idx % activeFrames.length].url} alt="" className="w-full h-full object-contain" />
         ) : (
@@ -1495,7 +1537,7 @@ function MapView({ lat, lng }) {
             style={{ position: "absolute", left: t.left, top: t.top, width: MAP_TILE, height: MAP_TILE, maxWidth: "none" }} />
         ))}
         <span className="absolute" style={{ left: "50%", top: "50%", transform: "translate(-50%, -100%)" }}>
-          <MapPin size={26} strokeWidth={2.6} color={C.peachDeep} fill="#FFFDF8" />
+          <MapPin size={26} strokeWidth={2.6} color={C.peachDeep} fill={C.card} />
         </span>
       </div>
       <a href={href} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
@@ -1612,7 +1654,9 @@ function TileMap({ center, zoom, onView, markers = [], height = 320, className =
               <span className="absolute rounded-full pointer-events-none"
                 style={{
                   left: x - accPx, top: y - accPx, width: accPx * 2, height: accPx * 2,
-                  background: `${mk.color}22`, border: `1.5px solid ${mk.color}66`,
+                  /* mk.color нь CSS хувьсагч тул hex залгаж болохгүй — color-mix */
+                  background: `color-mix(in srgb, ${mk.color} 14%, transparent)`,
+                  border: `1.5px solid color-mix(in srgb, ${mk.color} 45%, transparent)`,
                 }} />
             )}
             <span className="absolute flex flex-col items-center pointer-events-none"
@@ -2209,7 +2253,7 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onP
       {sendError && (
         <button onClick={() => setSendError("")}
           className="w-full text-left text-[11.5px] font-bold rounded-2xl px-3 py-2 mb-2"
-          style={{ background: "#FEF6F1", border: `1.5px solid ${C.peach}`, color: C.peachDeep }}>
+          style={{ background: `color-mix(in srgb, ${C.peach} 18%, ${C.card})`, border: `1.5px solid ${C.peach}`, color: C.peachDeep }}>
           {sendError} (хаах)
         </button>
       )}
@@ -2297,7 +2341,7 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onP
 
       {recording && (
         <div className="flex items-center gap-3 mb-2 rounded-[20px] px-4 py-3"
-          style={{ background: "#FEF6F1", border: `1.6px solid ${C.peach}` }}>
+          style={{ background: `color-mix(in srgb, ${C.peach} 18%, ${C.card})`, border: `1.6px solid ${C.peach}` }}>
           <span className="w-2.5 h-2.5 rounded-full shrink-0"
             style={{ background: C.peachDeep, animation: "pulse 1s ease-in-out infinite" }} />
           <div className="flex-1 min-w-0">
@@ -2768,7 +2812,7 @@ function CalendarScreen({ accountKey, partnerKey, partnerName, profileName, toda
         </div>
       </Card>
 
-      <Card tint="#FFFDF8" className="mb-3">
+      <Card tint={C.card} className="mb-3">
         <div className="text-[12.5px] font-extrabold mb-2" style={{ color: C.ink }}>{sel}</div>
         {dayEvents.length === 0 ? (
           <p className="text-[11.5px] font-semibold mb-2.5" style={{ color: C.inkSoft }}>Энэ өдөр юу ч алга.</p>
@@ -2934,7 +2978,7 @@ function DailyQuestionScreen({ accountKey, partnerKey, partnerName, profileName,
         </button>
       </Card>
 
-      <Card tint={partnerAnswer && myAnswer ? "#FEF6F1" : "#FFFDF8"} className="mb-4">
+      <Card tint={partnerAnswer && myAnswer ? "#FEF6F1" : C.card} className="mb-4">
         <div className="text-[10px] font-extrabold mb-1.5" style={{ color: C.peachDeep }}>
           {(partnerName || "ХАМТРАГЧ").toUpperCase()}
         </div>
@@ -2962,7 +3006,7 @@ function DailyQuestionScreen({ accountKey, partnerKey, partnerName, profileName,
           <div className="text-[13px] font-extrabold mb-2.5" style={{ color: C.ink }}>Өмнөх өдрүүд</div>
           <div className="space-y-2.5">
             {past.map((r) => (
-              <Card key={r.id} tint="#FFFDF8">
+              <Card key={r.id} tint={C.card}>
                 <div className="text-[10px] font-bold mb-1" style={{ color: C.inkSoft }}>{r.d}</div>
                 <div className="text-[12.5px] font-extrabold mb-2 leading-snug" style={{ color: C.ink }}>
                   {r.q || questionForDay(r.d)}
@@ -3463,7 +3507,7 @@ function SavedChatScreen({ accountKey, onBack }) {
 }
 
 /* ── Профайл ── */
-function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, setAvatar, profileName, chibiEnabled, setChibiEnabled, savedCount, onOpenSaved, accountKey, myStatus, coupleInfo, onBack }) {
+function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, setAvatar, profileName, chibiEnabled, setChibiEnabled, savedCount, onOpenSaved, accountKey, myStatus, coupleInfo, themeMode, setThemeMode, onBack }) {
   const [picking, setPicking] = useState(false);
   const fileRef = useRef(null);
   const done = items.filter((i) => i.done).length;
@@ -3600,6 +3644,31 @@ function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, 
       </div>
 
       <div className="text-[13px] font-extrabold mt-4 mb-2.5" style={{ color: C.ink }}>Тохиргоо</div>
+      <Card tint="#F4FBFE" className="mb-3">
+        <div className="text-[13px] font-extrabold mb-0.5" style={{ color: C.ink }}>Өнгөний горим</div>
+        <div className="text-[11.5px] font-bold mb-2.5" style={{ color: C.inkSoft }}>
+          Авто нь утасныхаа тохиргоог дагана
+        </div>
+        <div className="flex gap-2">
+          {[
+            { k: "auto", label: "Авто", icon: <SunMoon size={14} strokeWidth={2.4} /> },
+            { k: "light", label: "Өдөр", icon: <Sun size={14} strokeWidth={2.4} /> },
+            { k: "dark", label: "Шөнө", icon: <Moon size={14} strokeWidth={2.4} /> },
+          ].map((o) => (
+            <button key={o.k} onClick={() => setThemeMode(o.k)}
+              className="flex-1 h-10 rounded-full flex items-center justify-center gap-1.5 text-[12px] font-extrabold active:scale-95"
+              style={{
+                background: themeMode === o.k ? C.waterDeep : C.card,
+                color: themeMode === o.k ? "#fff" : C.ink,
+                border: `1.6px solid ${themeMode === o.k ? C.waterDeep : C.line2}`,
+                transition: "transform 150ms ease",
+              }}>
+              {o.icon} {o.label}
+            </button>
+          ))}
+        </div>
+      </Card>
+
       <Card tint="#F8F4FC">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -4001,6 +4070,18 @@ export default function App() {
      useSwipeBack/usePullToRefresh дотоод listener хэзээ ч холбогдохгүй
      үлдэх эрсдэлтэй байсан. setScreenEl callback ref нь element бодитоор
      mount/unmount болох мөч бүрд дуудагддаг тул энэ асуудлыг арилгана. */
+  /* Өнгөний горим: "auto" бол системийн сонголтыг дагана */
+  const [themeMode, setThemeMode] = useState(() => localStorage.getItem("ankomeow-theme") || "auto");
+  useEffect(() => {
+    localStorage.setItem("ankomeow-theme", themeMode);
+    const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
+    const resolve = () => applyTheme(themeMode === "auto" ? (mq?.matches ? "dark" : "light") : themeMode);
+    resolve();
+    if (themeMode !== "auto" || !mq) return;
+    mq.addEventListener?.("change", resolve);
+    return () => mq.removeEventListener?.("change", resolve);
+  }, [themeMode]);
+
   const [screenEl, setScreenEl] = useState(null);
   useSwipeBack(screenEl, () => go("home"), tab !== "home");
 
@@ -4585,7 +4666,7 @@ export default function App() {
   return (
     <div className="w-full min-h-screen flex items-start justify-center app-shell"
       style={{
-        background: `linear-gradient(160deg, ${C.paper2} 0%, #ECE0CC 100%)`,
+        background: `linear-gradient(160deg, ${C.paper2} 0%, color-mix(in srgb, ${C.paper2} 80%, ${C.ink}) 100%)`,
         fontFamily: "'Manrope','Inter',system-ui,-apple-system,sans-serif",
       }}>
       <style>{`
@@ -4649,9 +4730,9 @@ export default function App() {
       <div className="w-full max-w-[400px] overflow-hidden flex flex-col relative app-frame"
         style={{
           /* дэвсгэр зураг ирэхээс өмнө ч цайвар өнгө шууд зурагдана — цагаан анивчихгүй */
-          backgroundColor: "#F7EFE2",
-          backgroundImage: `${GRAIN}, linear-gradient(180deg, rgba(253,248,239,.82) 0%, rgba(244,234,218,.88) 100%), url(${BG_MAIN})`,
-          backgroundBlendMode: "multiply, normal, normal",
+          backgroundColor: C.paper2,
+          backgroundImage: `${GRAIN}, linear-gradient(180deg, var(--veil-a) 0%, var(--veil-b) 100%), url(${BG_MAIN})`,
+          backgroundBlendMode: "var(--frame-blend)",
           backgroundSize: "auto, auto, cover",
           backgroundPosition: "0 0, 0 0, center",
           backgroundRepeat: "repeat, no-repeat, no-repeat",
@@ -4689,7 +4770,7 @@ export default function App() {
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 overflow-hidden"
           style={{
             /* дэвсгэр зургийг эцэг элемент аль хэдийн үзүүлж байгаа тул энд давхардуулахгүй */
-            backgroundImage: "linear-gradient(180deg, rgba(253,248,239,.9) 0%, rgba(244,234,218,.94) 100%)",
+            backgroundImage: "linear-gradient(180deg, var(--splash-a) 0%, var(--splash-b) 100%)",
             opacity: booted ? 0 : 1, pointerEvents: booted ? "none" : "auto",
             transition: "opacity 600ms ease",
           }}>
@@ -4732,7 +4813,7 @@ export default function App() {
                 {tab === "list" && <ListScreen items={items} setItems={setItems} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "screen" && <ScreenTimeScreen {...{ screenApps, screenHistory, appMin }} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} partner={partnerStats} onBack={() => go("home")} />}
-                {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, setAvatar, profileName, chibiEnabled, setChibiEnabled }} gifCount={frames.length} savedCount={savedIds.size} onOpenSaved={() => go("saved")} accountKey={accountKey} myStatus={myStatus} coupleInfo={coupleInfo} onBack={() => go("home")} />}
+                {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, setAvatar, profileName, chibiEnabled, setChibiEnabled }} gifCount={frames.length} savedCount={savedIds.size} onOpenSaved={() => go("saved")} accountKey={accountKey} myStatus={myStatus} coupleInfo={coupleInfo} themeMode={themeMode} setThemeMode={setThemeMode} onBack={() => go("home")} />}
                 {tab === "saved" && <SavedChatScreen accountKey={accountKey} onBack={() => go("profile")} />}
                 {tab === "cal" && <CalendarScreen accountKey={accountKey} partnerKey={partnerKey}
                   partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} profileName={profileName}
