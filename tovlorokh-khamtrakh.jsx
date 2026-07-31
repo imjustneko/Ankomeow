@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { ChevronLeft, Check, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle, Bell, BellOff } from "lucide-react";
+import { ChevronLeft, Check, Copy, Bookmark, BookmarkCheck, Brush, Sticker, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle, Bell, BellOff } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, arrayUnion, increment } from "firebase/firestore";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
@@ -989,6 +989,517 @@ const chatTime = (ts) => {
   return `${g("hour")}:${g("minute")}`;
 };
 
+/* ── Хадгалсан чат ──
+   Зурвасын ХУУЛБАР өөрийн аккаунтын дор хадгалагдана (эх зурвасыг заасан
+   заагч биш). Ингэснээр илгээгч нь эх зурвасаа устгасан ч хадгалсан хуулбар
+   үлдэнэ. Баримтын id нь эх зурвасын id — нэг зурвас хоёр удаа хадгалагдахгүй. */
+const savedItemsCol = (accountKey) => collection(db, "rooms", CHAT_ROOM, "saved", accountKey, "items");
+const savedItemDoc = (accountKey, id) => doc(db, "rooms", CHAT_ROOM, "saved", accountKey, "items", id);
+
+/* Бодит цагийн байршил — эзэн нь бичиж, хос нь уншина */
+const liveDoc = (key) => doc(db, "rooms", CHAT_ROOM, "live", key);
+/* Статус — өөрийн мөр/эможи */
+const profileDoc = (key) => doc(db, "rooms", CHAT_ROOM, "profiles", key);
+
+/* Өөрийн sticker сан — зурсан зургаа дахин дахин илгээхэд */
+const stickersCol = (accountKey) => collection(db, "rooms", CHAT_ROOM, "stickers", accountKey, "items");
+const stickerDoc = (accountKey, id) => doc(db, "rooms", CHAT_ROOM, "stickers", accountKey, "items", id);
+
+/* Firestore нь undefined утгыг хүлээж авдаггүй тул зөвхөн байгаа талбарыг хуулна. */
+const SAVED_FIELDS = ["text", "label", "key", "gifUrl", "image", "strokes", "lat", "lng"];
+const savedSnapshot = (m) => {
+  const out = {
+    type: m.type,
+    sender: m.sender ?? null,
+    senderName: m.senderName ?? null,
+    sentAt: m.createdAt ?? null,
+  };
+  SAVED_FIELDS.forEach((f) => { if (m[f] !== undefined) out[f] = m[f]; });
+  return out;
+};
+
+/* Зурвасаас хуулж болох текстийг гаргана. Зураг/GIF-д хуулах зүйл байхгүй. */
+const copyableText = (m) => {
+  if (m.type === "text") return m.text || "";
+  if (m.type === "location") return m.lat != null && m.lng != null ? `${m.lat}, ${m.lng}` : "";
+  if (m.type === "reaction") return m.gifUrl ? "" : m.label || "";
+  return "";
+};
+
+const writeClipboard = async (t) => {
+  /* navigator.clipboard нь зөвхөн secure context дээр байдаг. Хуучин iOS
+     Safari болон http дээр ажиллуулахад textarea+execCommand руу шилжинэ. */
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(t);
+    return;
+  }
+  const ta = document.createElement("textarea");
+  ta.value = t;
+  ta.setAttribute("readonly", "");
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  ta.setSelectionRange(0, ta.value.length); /* iOS-д select() дангаараа хүрэлцэхгүй */
+  document.execCommand("copy");
+  document.body.removeChild(ta);
+};
+
+/* ── Зурах (sticker) ──
+   Зургийг ПИКСЕЛЬ БИШ, вектор шугам болгож хадгална. Цэг бүр 0..DRAW_UNITS
+   хоорондох харьцангуй нэгжид бичигдэнэ. Тиймээс жижиг утсан дээр зурсан зураг
+   том дэлгэц дээр ч, том утсан дээр зурсан нь жижиг дээр ч ЯГ ижил хэлбэртэй
+   харагдана — дэлгэцийн пиксел, DPR, өргөнөөс огт хамаарахгүй. */
+const DRAW_UNITS = 1000;
+const DRAW_COLORS = ["#2B2B2B", C.ink, C.peachDeep, "#E4557B", C.gold, C.sageDeep, C.waterDeep, C.lilacDeep];
+const DRAW_SIZES = [10, 20, 36];
+const DRAW_MIN_STEP = 7;      /* цэг хоорондын доод зай — хэт нягт цэгийг хаяна */
+const DRAW_MAX_POINTS = 6000; /* нэг зурган дахь цэгийн дээд хязгаар (Firestore 1MB) */
+/* Тунгалаг дэвсгэрийг харуулах цайвар шатрын хээ */
+const DRAW_CHECKER = `repeating-conic-gradient(${C.cardIn} 0% 25%, ${C.card} 0% 50%) 50% / 18px 18px`;
+
+const strokePoints = (strokes) => (strokes || []).reduce((n, s) => n + (s.p?.length || 0) / 2, 0);
+
+function DrawingView({ strokes, style }) {
+  return (
+    <svg viewBox={`0 0 ${DRAW_UNITS} ${DRAW_UNITS}`} className="block w-full"
+      style={{ aspectRatio: "1 / 1", ...style }} role="img" aria-label="Зурсан зураг">
+      {(strokes || []).map((s, i) => {
+        const p = s.p || [];
+        if (p.length < 2) return null;
+        /* Ганц товшилт — шугам биш, дугуй толбо */
+        if (p.length === 2) return <circle key={i} cx={p[0]} cy={p[1]} r={(s.w || 20) / 2} fill={s.c || "#2B2B2B"} />;
+        let d = "";
+        for (let k = 0; k < p.length; k += 2) d += `${k ? "L" : "M"}${p[k]} ${p[k + 1]}`;
+        return (
+          <path key={i} d={d} fill="none" stroke={s.c || "#2B2B2B"} strokeWidth={s.w || 20}
+            strokeLinecap="round" strokeLinejoin="round" />
+        );
+      })}
+    </svg>
+  );
+}
+
+function DrawPad({ stickers, onClose, onSend, onSaveSticker, onSendSticker, onDeleteSticker }) {
+  const [strokes, setStrokes] = useState([]);
+  const [cur, setCur] = useState(null);      /* зурж байгаа шугамын харагдах хуулбар */
+  const [color, setColor] = useState(DRAW_COLORS[0]);
+  const [width, setWidth] = useState(DRAW_SIZES[1]);
+  const [tray, setTray] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+  const boxRef = useRef(null);
+  const curRef = useRef(null);               /* жинхэнэ (mutable) шугам — фрэйм бүрт хуулбарлана */
+  const rafRef = useRef(0);
+
+  const committed = useMemo(() => strokePoints(strokes), [strokes]);
+  const empty = strokes.length === 0;
+
+  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
+
+  const pos = (e) => {
+    const r = boxRef.current.getBoundingClientRect();
+    const clamp = (v) => Math.max(0, Math.min(DRAW_UNITS, Math.round(v)));
+    return [clamp(((e.clientX - r.left) / r.width) * DRAW_UNITS), clamp(((e.clientY - r.top) / r.height) * DRAW_UNITS)];
+  };
+
+  /* pointermove бүрт setState хийвэл сул утсан дээр сааталтай болно —
+     фрэйм тутамд нэг л удаа шинэчилнэ. */
+  const flush = () => {
+    rafRef.current = 0;
+    if (curRef.current) setCur({ ...curRef.current, p: curRef.current.p.slice() });
+  };
+
+  const down = (e) => {
+    if (committed >= DRAW_MAX_POINTS) return;
+    try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch {}
+    const [x, y] = pos(e);
+    curRef.current = { c: color, w: width, p: [x, y] };
+    setCur({ ...curRef.current, p: [x, y] });
+  };
+
+  const move = (e) => {
+    const s = curRef.current;
+    if (!s) return;
+    if (committed + s.p.length / 2 >= DRAW_MAX_POINTS) return;
+    const [x, y] = pos(e);
+    const n = s.p.length;
+    if (Math.hypot(x - s.p[n - 2], y - s.p[n - 1]) < DRAW_MIN_STEP) return;
+    s.p.push(x, y);
+    if (!rafRef.current) rafRef.current = requestAnimationFrame(flush);
+  };
+
+  const up = () => {
+    const s = curRef.current;
+    curRef.current = null;
+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = 0; }
+    setCur(null);
+    if (s) setStrokes((all) => [...all, s]);
+  };
+
+  const saveSticker = () => {
+    if (empty) return;
+    onSaveSticker(strokes);
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 1200);
+  };
+
+  const IconBtn = ({ onClick, disabled, label, tone, children }) => (
+    <button onClick={onClick} disabled={disabled} aria-label={label}
+      className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 active:scale-90 disabled:opacity-35"
+      style={{ background: C.card, border: `1.6px solid ${C.line2}`, color: tone || C.ink, transition: "transform 120ms ease" }}>
+      {children}
+    </button>
+  );
+
+  return (
+    <div className="mb-2">
+      {tray && (
+        <div className="flex gap-2 overflow-x-auto pb-1.5 mb-2">
+          {stickers.length === 0 ? (
+            <p className="text-[11.5px] font-semibold py-3" style={{ color: C.inkSoft }}>
+              Хадгалсан sticker алга. Зураад 🔖 дар.
+            </p>
+          ) : stickers.map((s) => (
+            <div key={s.id} className="relative shrink-0 pt-1.5 pr-1.5">
+              <button onClick={() => onSendSticker(s)} aria-label="Sticker илгээх"
+                className="w-16 h-16 rounded-2xl overflow-hidden flex items-center justify-center active:scale-90"
+                style={{ background: DRAW_CHECKER, border: `1.6px solid ${C.line2}`, transition: "transform 120ms ease" }}>
+                <DrawingView strokes={s.strokes} />
+              </button>
+              <button onClick={() => onDeleteSticker(s.id)} aria-label="Sticker устгах"
+                className="absolute top-0 right-0 w-5 h-5 rounded-full flex items-center justify-center active:scale-90"
+                style={{ background: C.peachDeep, color: "#fff", border: "1.5px solid #fff" }}>
+                <X size={10} strokeWidth={3} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div ref={boxRef}
+        /* onPointerLeave-г ЗОРИУДААР сонсохгүй: setPointerCapture-тэй үед хуруу
+           талбайн гадуур гарахад ч эвентүүд бидэнд ирсээр байх ба capture-ийн
+           улмаас leave эрт дуудагдвал шугам дундуураа тасарна. */
+        onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
+        className="relative mx-auto rounded-[20px] overflow-hidden"
+        style={{
+          width: "min(100%, 46vh)", aspectRatio: "1 / 1", touchAction: "none",
+          background: DRAW_CHECKER, border: `1.8px solid ${C.line2}`,
+        }}>
+        <DrawingView strokes={cur ? [...strokes, cur] : strokes} style={{ position: "absolute", inset: 0, pointerEvents: "none" }} />
+        {empty && !cur && (
+          <span className="absolute inset-0 flex items-center justify-center text-[12px] font-bold pointer-events-none"
+            style={{ color: C.inkSoft }}>
+            Энд хуруугаараа зур
+          </span>
+        )}
+      </div>
+
+      <div className="flex items-center justify-center gap-1.5 mt-2">
+        {DRAW_COLORS.map((c) => (
+          <button key={c} onClick={() => setColor(c)} aria-label="Өнгө"
+            className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 active:scale-90"
+            style={{ background: c, border: `2.5px solid ${color === c ? C.ink : "transparent"}`, transition: "transform 120ms ease" }} />
+        ))}
+      </div>
+
+      <div className="flex items-center gap-1.5 mt-2">
+        {DRAW_SIZES.map((w) => (
+          <button key={w} onClick={() => setWidth(w)} aria-label="Бийрний зузаан"
+            className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 active:scale-90"
+            style={{ background: width === w ? C.cardIn : C.card, border: `1.6px solid ${C.line2}`, transition: "transform 120ms ease" }}>
+            <span className="rounded-full block" style={{ width: w / 3.2, height: w / 3.2, background: color }} />
+          </button>
+        ))}
+        <IconBtn onClick={() => setStrokes((a) => a.slice(0, -1))} disabled={empty} label="Буцаах">
+          <RotateCcw size={15} strokeWidth={2.4} />
+        </IconBtn>
+        <IconBtn onClick={() => setStrokes([])} disabled={empty} label="Цэвэрлэх" tone={C.peachDeep}>
+          <Trash2 size={15} strokeWidth={2.4} />
+        </IconBtn>
+        <IconBtn onClick={saveSticker} disabled={empty} label="Sticker болгож хадгалах"
+          tone={savedFlash ? C.lilacDeep : C.ink}>
+          {savedFlash ? <BookmarkCheck size={15} strokeWidth={2.6} /> : <Bookmark size={15} strokeWidth={2.4} />}
+        </IconBtn>
+        <IconBtn onClick={() => setTray((t) => !t)} label="Хадгалсан sticker" tone={tray ? C.lilacDeep : C.ink}>
+          <Sticker size={15} strokeWidth={2.4} />
+        </IconBtn>
+        <div className="flex-1" />
+        <IconBtn onClick={onClose} label="Хаах"><X size={15} strokeWidth={2.6} /></IconBtn>
+        <button onClick={() => { if (!empty) onSend(strokes); }} disabled={empty} aria-label="Илгээх"
+          className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 active:scale-90 disabled:opacity-35"
+          style={{ background: C.lilacDeep, color: "#fff", transition: "transform 120ms ease" }}>
+          <Send size={15} strokeWidth={2.4} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Байршлын жижиг газрын зураг ──
+   Түлхүүр (API key) шаардахгүйн тулд OpenStreetMap-ийн растер tile-уудыг шууд
+   зэрэгцүүлж тавина. Ямар ч сан (Leaflet г.м.) татахгүй, зөвхөн хэдэн <img>.
+   Товшиход Google Maps дээр нээгдэнэ. */
+const MAP_TILE = 256;
+const MAP_ZOOM = 15;
+const MAP_W = 212;
+const MAP_H = 142;
+
+const MAP_MIN_Z = 3;
+const MAP_MAX_Z = 19; /* OSM растер tile-ийн дээд түвшин */
+
+/* WGS84 → Web Mercator дэлхийн пиксел координат (тухайн zoom дээр) */
+function worldPx(lat, lng, z) {
+  const tot = 2 ** z * MAP_TILE;
+  const latR = (Math.max(-85.05, Math.min(85.05, lat)) * Math.PI) / 180;
+  return [
+    ((lng + 180) / 360) * tot,
+    ((1 - Math.log(Math.tan(latR) + 1 / Math.cos(latR)) / Math.PI) / 2) * tot,
+  ];
+}
+
+/* Буцаах хөрвүүлэлт — газрын зургийг чирэхэд шинэ төвийг олоход хэрэгтэй */
+function pxToLatLng(x, y, z) {
+  const tot = 2 ** z * MAP_TILE;
+  return [
+    (Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / tot))) * 180) / Math.PI,
+    (x / tot) * 360 - 180,
+  ];
+}
+
+/* Хоёр цэгийн хоорондох зай (метр) — haversine */
+function distanceM(a, b) {
+  const R = 6371000;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const la1 = (a.lat * Math.PI) / 180, la2 = (b.lat * Math.PI) / 180;
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+
+const prettyDistance = (m) => (m < 1000 ? `${Math.round(m)} м` : `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} км`);
+
+/* Нэг пикселд ногдох метр — байршлын нарийвчлалын тойргийг зурахад */
+const metersPerPx = (lat, z) => (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** z;
+
+/* Firestore Timestamp эсвэл энгийн миллисекундыг хоёуланг нь хүлээж авна */
+const agoText = (ts) => {
+  const ms = ts?.toMillis ? ts.toMillis() : ts;
+  if (!ms) return "";
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 45) return "яг одоо";
+  if (s < 3600) return `${Math.round(s / 60)} мин өмнө`;
+  if (s < 86400) return `${Math.round(s / 3600)} цагийн өмнө`;
+  return `${Math.round(s / 86400)} өдрийн өмнө`;
+};
+
+function mapTiles(lat, lng, z, w, h) {
+  const n = 2 ** z;
+  const [cx, cy] = worldPx(lat, lng, z);
+  const left = cx - w / 2, top = cy - h / 2;
+  const out = [];
+  for (let x = Math.floor(left / MAP_TILE); x <= Math.floor((left + w) / MAP_TILE); x++) {
+    for (let y = Math.floor(top / MAP_TILE); y <= Math.floor((top + h) / MAP_TILE); y++) {
+      if (y < 0 || y >= n) continue; /* туйлын цаана tile байхгүй */
+      out.push({
+        key: `${x}/${y}`,
+        x: ((x % n) + n) % n, /* уртрагаар тойрч дугуйлна */
+        y,
+        left: x * MAP_TILE - left,
+        top: y * MAP_TILE - top,
+      });
+    }
+  }
+  return out;
+}
+
+function MapView({ lat, lng }) {
+  if (lat == null || lng == null) return null;
+  const tiles = mapTiles(lat, lng, MAP_ZOOM, MAP_W, MAP_H);
+  const href = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+  return (
+    <div style={{ width: MAP_W, maxWidth: "100%" }}>
+      <div className="relative overflow-hidden rounded-[14px]"
+        style={{ height: MAP_H, background: C.cardIn, border: `1.5px solid ${C.line}` }}>
+        {tiles.map((t) => (
+          <img key={t.key} src={`https://tile.openstreetmap.org/${MAP_ZOOM}/${t.x}/${t.y}.png`}
+            alt="" loading="lazy" onError={(e) => { e.currentTarget.style.visibility = "hidden"; }}
+            style={{ position: "absolute", left: t.left, top: t.top, width: MAP_TILE, height: MAP_TILE, maxWidth: "none" }} />
+        ))}
+        <span className="absolute" style={{ left: "50%", top: "50%", transform: "translate(-50%, -100%)" }}>
+          <MapPin size={26} strokeWidth={2.6} color={C.peachDeep} fill="#FFFDF8" />
+        </span>
+      </div>
+      <a href={href} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
+        className="mt-1 flex items-center justify-center gap-1.5 rounded-full py-1.5 text-[11px] font-extrabold active:scale-[0.97]"
+        style={{ background: C.card, border: `1.5px solid ${C.line2}`, color: C.ink, transition: "transform 150ms ease" }}>
+        <MapPin size={12} strokeWidth={2.6} /> Google Map дээр нээх
+      </a>
+    </div>
+  );
+}
+
+/* ── Интерактив газрын зураг ──
+   Гадны сан (Leaflet/Google) ашиглахгүй: tile-уудыг өөрсдөө байрлуулж, чирэх
+   болон хоёр хурууны zoom-ыг pointer эвентээр барина. Бүрэн үнэгүй. */
+function TileMap({ center, zoom, onView, markers = [], height = 320, className = "" }) {
+  const boxRef = useRef(null);
+  const [size, setSize] = useState({ w: 0, h: 0 }); /* ResizeObserver бөглөх хүртэл юу ч зурахгүй */
+  const ptrsRef = useRef(new Map()); /* pointerId → {x,y} */
+  const gestureRef = useRef(null);
+
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setSize({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    setSize({ w: el.clientWidth, h: el.clientHeight });
+    return () => ro.disconnect();
+  }, []);
+
+  const { w, h } = size;
+  const tiles = w > 0 ? mapTiles(center.lat, center.lng, zoom, w, h) : [];
+  const [ccx, ccy] = worldPx(center.lat, center.lng, zoom);
+
+  /* Дэлгэц дээрх байрлал: тухайн цэг ба төвийн дэлхийн пикселийн зөрүү */
+  const screenPos = (lat, lng) => {
+    const [x, y] = worldPx(lat, lng, zoom);
+    return [x - ccx + w / 2, y - ccy + h / 2];
+  };
+
+  const panBy = (dx, dy) => {
+    const [lat, lng] = pxToLatLng(ccx - dx, ccy - dy, zoom);
+    onView({ center: { lat, lng }, zoom });
+  };
+
+  /* Хуруу/хулганы дундах цэгийг байрандаа үлдээж zoom хийнэ */
+  const zoomAt = (nextZoom, px, py) => {
+    const z = Math.max(MAP_MIN_Z, Math.min(MAP_MAX_Z, nextZoom));
+    if (z === zoom) return;
+    const [alat, alng] = pxToLatLng(ccx + (px - w / 2), ccy + (py - h / 2), zoom); /* анкер цэг */
+    const [ax, ay] = worldPx(alat, alng, z);
+    const [lat, lng] = pxToLatLng(ax - (px - w / 2), ay - (py - h / 2), z);
+    onView({ center: { lat, lng }, zoom: z });
+  };
+
+  const local = (e) => {
+    const r = boxRef.current.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  };
+
+  const down = (e) => {
+    try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch {}
+    ptrsRef.current.set(e.pointerId, local(e));
+    if (ptrsRef.current.size === 2) {
+      const [a, b] = [...ptrsRef.current.values()];
+      gestureRef.current = { dist: Math.hypot(a.x - b.x, a.y - b.y), zoom };
+    }
+  };
+
+  const move = (e) => {
+    const ptrs = ptrsRef.current;
+    const prev = ptrs.get(e.pointerId);
+    if (!prev) return;
+    const cur = local(e);
+    ptrs.set(e.pointerId, cur);
+
+    if (ptrs.size >= 2 && gestureRef.current) {
+      const [a, b] = [...ptrs.values()];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      const g = gestureRef.current;
+      if (g.dist > 8) {
+        /* Хоёр дахин ойртуулах бүрд zoom нэгээр нэмэгдэнэ (log2) */
+        zoomAt(Math.round(g.zoom + Math.log2(dist / g.dist)), (a.x + b.x) / 2, (a.y + b.y) / 2);
+      }
+      return;
+    }
+    panBy(cur.x - prev.x, cur.y - prev.y);
+  };
+
+  const up = (e) => {
+    ptrsRef.current.delete(e.pointerId);
+    if (ptrsRef.current.size < 2) gestureRef.current = null;
+  };
+
+  return (
+    <div ref={boxRef}
+      onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
+      onWheel={(e) => { const p = local(e); zoomAt(zoom + (e.deltaY < 0 ? 1 : -1), p.x, p.y); }}
+      className={`relative overflow-hidden ${className}`}
+      style={{ height, touchAction: "none", background: C.cardIn, border: `1.5px solid ${C.line}` }}>
+      {tiles.map((t) => (
+        <img key={`${zoom}/${t.key}`} src={`https://tile.openstreetmap.org/${zoom}/${t.x}/${t.y}.png`}
+          alt="" draggable={false} onError={(e) => { e.currentTarget.style.visibility = "hidden"; }}
+          style={{ position: "absolute", left: t.left, top: t.top, width: MAP_TILE, height: MAP_TILE, maxWidth: "none" }} />
+      ))}
+
+      {w > 0 && markers.map((mk) => {
+        const [x, y] = screenPos(mk.lat, mk.lng);
+        if (x < -80 || y < -80 || x > w + 80 || y > h + 80) return null;
+        const accPx = mk.acc ? mk.acc / metersPerPx(mk.lat, zoom) : 0;
+        return (
+          <div key={mk.key}>
+            {accPx > 6 && (
+              <span className="absolute rounded-full pointer-events-none"
+                style={{
+                  left: x - accPx, top: y - accPx, width: accPx * 2, height: accPx * 2,
+                  background: `${mk.color}22`, border: `1.5px solid ${mk.color}66`,
+                }} />
+            )}
+            <span className="absolute flex flex-col items-center pointer-events-none"
+              style={{ left: x, top: y, transform: "translate(-50%, -100%)" }}>
+              <span className="rounded-full overflow-hidden flex items-center justify-center"
+                style={{ width: 34, height: 34, background: mk.color, border: "2.5px solid #fff", boxShadow: "0 4px 10px rgba(92,74,58,.3)" }}>
+                {mk.avatar
+                  ? <img src={mk.avatar} alt="" className="w-full h-full object-cover" />
+                  : <MapPin size={17} strokeWidth={2.6} color="#fff" />}
+              </span>
+              <span className="text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-full mt-0.5 whitespace-nowrap"
+                style={{ background: C.card, border: `1.2px solid ${C.line2}`, color: C.ink }}>
+                {mk.label}
+              </span>
+            </span>
+          </div>
+        );
+      })}
+
+      <div className="absolute right-2 bottom-2 flex flex-col gap-1.5">
+        {[["+", 1], ["−", -1]].map(([sign, d]) => (
+          <button key={sign} onClick={() => zoomAt(zoom + d, w / 2, h / 2)} aria-label={d > 0 ? "Ойртуулах" : "Холдуулах"}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-[16px] font-extrabold active:scale-90"
+            style={{ background: C.card, border: `1.6px solid ${C.line2}`, color: C.ink, transition: "transform 120ms ease" }}>
+            {sign}
+          </button>
+        ))}
+      </div>
+
+      <span className="absolute left-1.5 bottom-1 text-[8.5px] font-bold px-1 rounded"
+        style={{ background: "rgba(255,253,248,.75)", color: C.inkSoft }}>
+        © OpenStreetMap
+      </span>
+    </div>
+  );
+}
+
+/* Бөмбөлөгний дотоод агуулга — чат болон хадгалсан чат хоёулаа ашиглана */
+function MessageBody({ m }) {
+  return (
+    <>
+      {m.type === "text" && m.text}
+      {m.type === "image" && <img src={m.image} alt="" className="rounded-[14px] max-w-full block" style={{ maxHeight: 220 }} />}
+      {m.type === "drawing" && <div style={{ width: 190, maxWidth: "100%" }}><DrawingView strokes={m.strokes} /></div>}
+      {m.type === "reaction" && m.gifUrl && (
+        <div>
+          <img src={m.gifUrl} alt={m.label} className="rounded-[14px] max-w-full block" style={{ maxHeight: 180 }} />
+          <div className="italic text-[11px] px-1 pt-1">{m.label}</div>
+        </div>
+      )}
+      {m.type === "reaction" && !m.gifUrl && <span className="italic">*{m.label}*</span>}
+      {m.type === "location" && <MapView lat={m.lat} lng={m.lng} />}
+    </>
+  );
+}
+
 const compressImage = (file, maxDim, quality) => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.onerror = reject;
@@ -1028,18 +1539,22 @@ function messagePreview(payload) {
     case "text": return payload.text?.slice(0, 120) || "Зурвас илгээлээ";
     case "reaction": return payload.label || "Реакц илгээлээ";
     case "image": return "📷 Зураг илгээлээ";
+    case "drawing": return "🎨 Зураг зурлаа";
     case "location": return "📍 Байршлаа илгээлээ";
     default: return "Шинэ зурвас";
   }
 }
 
-function ChatScreen({ onBack, profileName, accountKey, partnerKey, onPartnerBubble }) {
+function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onPartnerBubble }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [showReact, setShowReact] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [partnerSeenAt, setPartnerSeenAt] = useState(null);
   const [reactingTo, setReactingTo] = useState(null);
+  const [copiedId, setCopiedId] = useState(null);
+  const [showDraw, setShowDraw] = useState(false);
+  const [stickers, setStickers] = useState([]);
   const listRef = useRef(null);
   const lastPartnerBubbleRef = useRef(null);
   const imgFileRef = useRef(null);
@@ -1051,6 +1566,15 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, onPartnerBubb
     }, () => {});
     return unsub;
   }, []);
+
+  useEffect(() => {
+    if (!accountKey) return;
+    const q = query(stickersCol(accountKey), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(q, (snap) => {
+      setStickers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    }, () => {});
+    return unsub;
+  }, [accountKey]);
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "rooms", CHAT_ROOM, "reads", partnerKey), (snap) => {
@@ -1095,6 +1619,25 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, onPartnerBubb
     setReactingTo(null);
   };
 
+  const copyMessage = async (m) => {
+    const t = copyableText(m);
+    if (!t) return;
+    try {
+      await writeClipboard(t);
+      setCopiedId(m.id);
+      setTimeout(() => setCopiedId((id) => (id === m.id ? null : id)), 1200);
+    } catch {}
+  };
+
+  /* Хадгалах/буцаах. Хадгалахдаа тухайн үеийн агуулгыг бүтнээр нь хуулна. */
+  const toggleSave = (m) => {
+    if (savedIds.has(m.id)) {
+      deleteDoc(savedItemDoc(accountKey, m.id)).catch(() => {});
+    } else {
+      setDoc(savedItemDoc(accountKey, m.id), { ...savedSnapshot(m), savedAt: serverTimestamp() }).catch(() => {});
+    }
+  };
+
   const deleteMessage = (id) => {
     deleteDoc(doc(db, "rooms", CHAT_ROOM, "messages", id)).catch(() => {});
     setReactingTo(null);
@@ -1105,6 +1648,19 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, onPartnerBubb
     const pool = REACTION_GIFS[r.key] || [];
     const pick = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
     send({ type: "reaction", key: r.key, label: r.label, gifUrl: pick });
+  };
+
+  const sendDrawing = (strokes) => {
+    setShowDraw(false);
+    send({ type: "drawing", strokes });
+  };
+
+  const saveSticker = (strokes) => {
+    addDoc(stickersCol(accountKey), { strokes, createdAt: serverTimestamp() }).catch(() => {});
+  };
+
+  const deleteSticker = (id) => {
+    deleteDoc(stickerDoc(accountKey, id)).catch(() => {});
   };
 
   const sendLocation = () => {
@@ -1167,7 +1723,8 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, onPartnerBubb
         ) : (
           messages.map((m) => {
             const mine = m.sender === accountKey;
-            const media = m.type === "image" || (m.type === "reaction" && m.gifUrl);
+            const draw = m.type === "drawing";
+            const media = m.type === "image" || draw || m.type === "location" || (m.type === "reaction" && m.gifUrl);
             const seen = mine && m.createdAt && partnerSeenAt && m.createdAt.toMillis() <= partnerSeenAt.toMillis();
             const myReaction = m.reactions?.[accountKey];
             const reactionList = Object.values(m.reactions || {});
@@ -1179,24 +1736,14 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, onPartnerBubb
                 <div ref={m.id === lastPartnerId ? lastPartnerBubbleRef : null}
                   onClick={() => setReactingTo((id) => (id === m.id ? null : m.id))}
                   className={`max-w-[75%] rounded-[18px] text-[13px] font-semibold cursor-pointer ${media ? "p-1.5" : "px-3.5 py-2.5"}`}
-                  style={{
-                    background: mine ? C.lilacDeep : C.card, color: mine ? "#fff" : C.ink,
-                    border: mine ? "none" : `1.5px solid ${C.line}`,
-                  }}>
-                  {m.type === "text" && m.text}
-                  {m.type === "image" && <img src={m.image} alt="" className="rounded-[14px] max-w-full block" style={{ maxHeight: 220 }} />}
-                  {m.type === "reaction" && m.gifUrl && (
-                    <div>
-                      <img src={m.gifUrl} alt={m.label} className="rounded-[14px] max-w-full block" style={{ maxHeight: 180 }} />
-                      <div className="italic text-[11px] px-1 pt-1">{m.label}</div>
-                    </div>
-                  )}
-                  {m.type === "reaction" && !m.gifUrl && <span className="italic">*{m.label}*</span>}
-                  {m.type === "location" && (
-                    <span className="flex items-center gap-1.5">
-                      <MapPin size={13} strokeWidth={2.4} /> {m.lat?.toFixed(4)}, {m.lng?.toFixed(4)}
-                    </span>
-                  )}
+                  style={draw
+                    /* Зурсан зураг нь тунгалаг sticker — бөмбөлөггүй хөвнө */
+                    ? { background: "transparent", border: "none", padding: 0 }
+                    : {
+                      background: mine ? C.lilacDeep : C.card, color: mine ? "#fff" : C.ink,
+                      border: mine ? "none" : `1.5px solid ${C.line}`,
+                    }}>
+                  <MessageBody m={m} />
                 </div>
 
                 {reactingTo === m.id && (
@@ -1208,6 +1755,35 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, onPartnerBubb
                         {e}
                       </button>
                     ))}
+                    <div className="w-[1.5px] self-stretch my-0.5" style={{ background: C.line2 }} />
+                    <button onClick={() => toggleSave(m)}
+                      className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90"
+                      style={{ color: savedIds.has(m.id) ? C.lilacDeep : C.inkSoft, transition: "transform 120ms ease" }}
+                      aria-label={savedIds.has(m.id) ? "Хадгалснаас хасах" : "Хадгалах"}>
+                      {savedIds.has(m.id)
+                        ? <BookmarkCheck size={14} strokeWidth={2.4} />
+                        : <Bookmark size={14} strokeWidth={2.2} />}
+                    </button>
+                    {draw && (
+                      <button onClick={() => saveSticker(m.strokes || [])}
+                        className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90"
+                        style={{ color: C.inkSoft, transition: "transform 120ms ease" }}
+                        aria-label="Sticker болгож хадгалах">
+                        <Sticker size={14} strokeWidth={2.2} />
+                      </button>
+                    )}
+                    {copyableText(m) && (
+                      <>
+                        <button onClick={() => copyMessage(m)}
+                          className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90"
+                          style={{ color: copiedId === m.id ? C.waterDeep : C.inkSoft, transition: "transform 120ms ease" }}
+                          aria-label={copiedId === m.id ? "Хуулагдлаа" : "Хуулах"}>
+                          {copiedId === m.id
+                            ? <Check size={14} strokeWidth={2.6} />
+                            : <Copy size={14} strokeWidth={2.2} />}
+                        </button>
+                      </>
+                    )}
                     {mine && (
                       <>
                         <div className="w-[1.5px] self-stretch my-0.5" style={{ background: C.line2 }} />
@@ -1249,14 +1825,28 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, onPartnerBubb
         </div>
       )}
 
-      <div className="safe-bottom-pad flex gap-2 items-center pb-1">
-        <button onClick={() => setShowReact((s) => !s)}
+      {showDraw && (
+        <DrawPad stickers={stickers} onClose={() => setShowDraw(false)} onSend={sendDrawing}
+          onSaveSticker={saveSticker} onDeleteSticker={deleteSticker}
+          onSendSticker={(s) => sendDrawing(s.strokes || [])} />
+      )}
+
+      <div className="safe-bottom-pad flex gap-1.5 items-center pb-1">
+        <button onClick={() => { setShowDraw(false); setShowReact((s) => !s); }}
           className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center active:scale-95"
           style={{
             background: showReact ? C.lilacDeep : C.card, border: `1.8px solid ${C.line2}`,
             color: showReact ? "#fff" : C.ink, transition: "transform 150ms ease",
           }} aria-label="Реакц">
           <Heart size={17} strokeWidth={2.2} />
+        </button>
+        <button onClick={() => { setShowReact(false); setShowDraw((s) => !s); }}
+          className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center active:scale-95"
+          style={{
+            background: showDraw ? C.lilacDeep : C.card, border: `1.8px solid ${C.line2}`,
+            color: showDraw ? "#fff" : C.ink, transition: "transform 150ms ease",
+          }} aria-label="Зурах">
+          <Brush size={17} strokeWidth={2.2} />
         </button>
         <button onClick={() => imgFileRef.current?.click()} disabled={uploading}
           className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center active:scale-95 disabled:opacity-40"
@@ -1492,8 +2082,299 @@ function ChangePasswordCard() {
   );
 }
 
+/* ── Статус ── */
+const STATUS_MAX = 80;
+const STATUS_EMOJI = ["🥰", "😴", "🍜", "📚", "💪", "🚗", "🎧", "😤", "🤒", "🎮", "☕", "💜"];
+
+function StatusCard({ accountKey, status }) {
+  const [text, setText] = useState("");
+  const [editing, setEditing] = useState(false);
+
+  /* Firestore-оос ирсэн утгыг зөвхөн засварлаагүй үед л тусгана —
+     бичиж байх үед хуруун доороос үсэг солигдохгүй. */
+  useEffect(() => {
+    if (!editing) setText(status || "");
+  }, [status, editing]);
+
+  const save = (value) => {
+    const t = (value ?? text).slice(0, STATUS_MAX).trim();
+    setDoc(profileDoc(accountKey), { status: t, at: serverTimestamp() }, { merge: true }).catch(() => {});
+    setEditing(false);
+  };
+
+  return (
+    <Card tint="#FFFAF0" className="mb-4">
+      <div className="text-[12.5px] font-extrabold mb-2" style={{ color: C.ink }}>Миний статус</div>
+      <div className="flex gap-2 items-center">
+        <input value={text} onChange={(e) => { setEditing(true); setText(e.target.value.slice(0, STATUS_MAX)); }}
+          onKeyDown={(e) => e.key === "Enter" && save()} placeholder="Юу бодож байна? 😊"
+          maxLength={STATUS_MAX} enterKeyHint="done"
+          className="flex-1 min-w-0 rounded-full px-3.5 py-2.5 text-[16px] font-medium outline-none"
+          style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
+        <button onClick={() => save()} aria-label="Статус хадгалах"
+          className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center active:scale-95"
+          style={{ background: C.peachDeep, color: "#fff", transition: "transform 150ms ease" }}>
+          <Check size={17} strokeWidth={2.6} />
+        </button>
+      </div>
+      <div className="flex gap-1 mt-2 flex-wrap">
+        {STATUS_EMOJI.map((e) => (
+          <button key={e} onClick={() => { setEditing(true); setText((t) => (t + e).slice(0, STATUS_MAX)); }}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-[16px] active:scale-90"
+            style={{ background: C.card, border: `1.4px solid ${C.line}`, transition: "transform 120ms ease" }}>
+            {e}
+          </button>
+        ))}
+        {text && (
+          <button onClick={() => { setEditing(true); setText(""); save(""); }}
+            className="h-8 px-3 rounded-full text-[11.5px] font-extrabold active:scale-90"
+            style={{ background: C.card, border: `1.4px solid ${C.line}`, color: C.peachDeep, transition: "transform 120ms ease" }}>
+            Арилгах
+          </button>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+/* ── Бодит цагийн газрын зураг ── */
+const UB = { lat: 47.9184, lng: 106.9177 }; /* хаана ч байршил мэдэгдэхгүй үеийн эхлэл */
+
+/* Хоёулаа багтахаар zoom сонгоно */
+const zoomForSpan = (meters, lat) => {
+  const mpp = Math.max(1, (meters * 2.2) / 320); /* дэлгэцийн ~320px-д багтаана */
+  const z = Math.floor(Math.log2((156543.03392 * Math.cos((lat * Math.PI) / 180)) / mpp));
+  return Math.max(MAP_MIN_Z, Math.min(17, z));
+};
+
+function LiveMapScreen({ accountKey, partnerKey, profileName, partnerName, avatar, partnerAvatar, onBack }) {
+  const [sharing, setSharing] = useState(() => localStorage.getItem("ankomeow-share-loc") === "1");
+  const [me, setMe] = useState(null);        /* { lat, lng, acc, ts } — өөрийн шууд заалт */
+  const [partner, setPartner] = useState(null);
+  const [err, setErr] = useState("");
+  const [view, setView] = useState({ center: UB, zoom: 12 });
+  const [tick, setTick] = useState(0);       /* "хэдэн минутын өмнө"-г шинэчлэхэд */
+  const inited = useRef(false);
+  const lastWrite = useRef(0);
+  const lastPos = useRef(null);
+
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 20000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("ankomeow-share-loc", sharing ? "1" : "0");
+  }, [sharing]);
+
+  /* Хуваалцахаа болих — өөрийн байршлыг сангаас цэвэрлэнэ */
+  useEffect(() => {
+    if (sharing || !accountKey) return;
+    setMe(null);
+    lastPos.current = null;
+    deleteDoc(liveDoc(accountKey)).catch(() => {});
+  }, [sharing, accountKey]);
+
+  /* Байршлыг зөвхөн энэ дэлгэц нээлттэй үед л мөрдөнө — батарей, нууцлалын аль
+     алинд нь зөв. Бичихдээ 8 секунд тутам эсвэл 15м хөдөлсөн үед л илгээнэ. */
+  useEffect(() => {
+    if (!sharing || !accountKey) return;
+    if (!navigator.geolocation) { setErr("Энэ төхөөрөмж байршил дэмжихгүй байна."); return; }
+    const id = navigator.geolocation.watchPosition(
+      (p) => {
+        setErr("");
+        const pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy || 0) };
+        setMe({ ...pos, ts: Date.now() });
+        const now = Date.now();
+        const moved = lastPos.current ? distanceM(lastPos.current, pos) : Infinity;
+        if (now - lastWrite.current > 8000 || moved > 15) {
+          lastWrite.current = now;
+          lastPos.current = pos;
+          setDoc(liveDoc(accountKey), { ...pos, at: serverTimestamp() }).catch(() => {});
+        }
+      },
+      (e) => setErr(e.code === 1
+        ? "Байршлын зөвшөөрөл өгөөгүй байна. Хөтчийн тохиргооноос зөвшөөрнө үү."
+        : "Байршил тодорхойлж чадсангүй. Гадаа эсвэл цонхны дэргэд оролдоно уу."),
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, [sharing, accountKey]);
+
+  useEffect(() => {
+    if (!partnerKey) return;
+    const unsub = onSnapshot(liveDoc(partnerKey), (snap) => {
+      setPartner(snap.exists() ? snap.data() : null);
+    }, () => {});
+    return unsub;
+  }, [partnerKey]);
+
+  /* Эхний байршил мэдэгдмэгц нэг л удаа автоматаар төвлөрнө */
+  useEffect(() => {
+    if (inited.current) return;
+    const first = me || partner;
+    if (!first?.lat) return;
+    inited.current = true;
+    setView({ center: { lat: first.lat, lng: first.lng }, zoom: 16 });
+  }, [me, partner]);
+
+  const markers = [];
+  if (me?.lat != null) markers.push({ key: "me", lat: me.lat, lng: me.lng, acc: me.acc, color: C.waterDeep, label: profileName || "Би", avatar });
+  if (partner?.lat != null) markers.push({ key: "p", lat: partner.lat, lng: partner.lng, acc: partner.acc, color: C.peachDeep, label: partnerName || "Хамтрагч", avatar: partnerAvatar });
+
+  const gap = me?.lat != null && partner?.lat != null ? distanceM(me, partner) : null;
+
+  const focus = (p, z = 17) => p?.lat != null && setView({ center: { lat: p.lat, lng: p.lng }, zoom: z });
+
+  const fitBoth = () => {
+    if (me?.lat == null || partner?.lat == null) return;
+    const mid = { lat: (me.lat + partner.lat) / 2, lng: (me.lng + partner.lng) / 2 };
+    setView({ center: mid, zoom: zoomForSpan(Math.max(50, gap), mid.lat) });
+  };
+
+  return (
+    <div>
+      <Header title="Газрын зураг" sub="Хоёулангийнхаа байршлыг шууд харах" onBack={onBack} />
+
+      <div className="rounded-[22px] overflow-hidden mb-3">
+        <TileMap center={view.center} zoom={view.zoom} onView={setView} markers={markers} height="min(58vh, 460px)" />
+      </div>
+
+      <div className="flex gap-2 mb-3">
+        <Pill onClick={() => focus(me)} className="flex-1 py-2 text-[11.5px]" active={false}>Би</Pill>
+        <Pill onClick={() => focus(partner)} className="flex-1 py-2 text-[11.5px]">{partnerName || "Хамтрагч"}</Pill>
+        <Pill onClick={fitBoth} className="flex-1 py-2 text-[11.5px]">Хоёулаа</Pill>
+      </div>
+
+      <Card tint="#F4FBFE" className="mb-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[13px] font-extrabold mb-0.5" style={{ color: C.ink }}>Байршлаа хуваалцах</div>
+            <div className="text-[11.5px] font-bold leading-snug" style={{ color: C.inkSoft }}>
+              {sharing
+                ? (me ? `Нарийвчлал ±${me.acc} м · ${agoText(me.ts)}` : "Байршлыг тодорхойлж байна…")
+                : "Зөвхөн энэ дэлгэц нээлттэй үед хуваалцана"}
+            </div>
+          </div>
+          <button onClick={() => setSharing((v) => !v)} aria-pressed={sharing} aria-label="Байршлаа хуваалцах"
+            className="w-12 h-7 rounded-full shrink-0 relative active:scale-95"
+            style={{ background: sharing ? C.waterDeep : C.line2, transition: "background 200ms ease, transform 150ms ease" }}>
+            <span className="absolute top-1 w-5 h-5 rounded-full bg-white shadow"
+              style={{ left: sharing ? 26 : 4, transition: "left 200ms cubic-bezier(.2,.8,.3,1)" }} />
+          </button>
+        </div>
+        {err && (
+          <div className="text-[11.5px] font-bold mt-2 leading-snug" style={{ color: C.peachDeep }}>{err}</div>
+        )}
+      </Card>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Card tint="#FEF6F1">
+          <div className="text-[11.5px] font-bold mb-1" style={{ color: C.peachDeep }}>{partnerName || "Хамтрагч"}</div>
+          <div className="text-[13px] font-extrabold leading-snug" style={{ color: C.ink }}>
+            {partner?.lat != null ? agoText(partner.at) : "Хуваалцаагүй"}
+          </div>
+          {partner?.acc != null && (
+            <div className="text-[11px] font-bold mt-0.5" style={{ color: C.inkSoft }}>Нарийвчлал ±{partner.acc} м</div>
+          )}
+        </Card>
+        <Card tint="#F5FBF3">
+          <div className="text-[11.5px] font-bold mb-1" style={{ color: C.sageDeep }}>Хоорондын зай</div>
+          <div className="text-[15px] font-extrabold" style={{ color: C.ink }}>
+            {gap != null ? prettyDistance(gap) : "—"}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/* ── Хадгалсан чат ── */
+function SavedChatScreen({ accountKey, onBack }) {
+  const [items, setItems] = useState([]);
+  const [copiedId, setCopiedId] = useState(null);
+
+  useEffect(() => {
+    if (!accountKey) return;
+    const q = query(savedItemsCol(accountKey), orderBy("savedAt", "desc"));
+    const unsub = onSnapshot(q, (snap) => {
+      setItems(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    }, () => {});
+    return unsub;
+  }, [accountKey]);
+
+  const copyItem = async (m) => {
+    const t = copyableText(m);
+    if (!t) return;
+    try {
+      await writeClipboard(t);
+      setCopiedId(m.id);
+      setTimeout(() => setCopiedId((id) => (id === m.id ? null : id)), 1200);
+    } catch {}
+  };
+
+  const remove = (id) => {
+    deleteDoc(savedItemDoc(accountKey, id)).catch(() => {});
+  };
+
+  return (
+    <div>
+      <Header title="Хадгалсан чат" sub="Дурсамжтай зурвасууд" onBack={onBack} />
+
+      {items.length === 0 ? (
+        <p className="text-[12px] py-10 text-center font-medium" style={{ color: C.inkSoft }}>
+          Одоогоор хадгалсан зурвас алга.<br />Чат дээр зурвас дээрээ товшоод 🔖 дар.
+        </p>
+      ) : (
+        <div className="space-y-2.5">
+          {items.map((m) => {
+            const mine = m.sender === accountKey;
+            const draw = m.type === "drawing";
+            const media = m.type === "image" || draw || m.type === "location" || (m.type === "reaction" && m.gifUrl);
+            return (
+              <Card key={m.id} tint={mine ? "#F8F4FC" : "#FFFFFF"}>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <div className="text-[10px] font-bold truncate" style={{ color: C.inkSoft }}>
+                    {m.senderName || (mine ? "Би" : "Хамтрагч")} · {chatTime(m.sentAt)}
+                  </div>
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    {copyableText(m) && (
+                      <button onClick={() => copyItem(m)}
+                        className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90"
+                        style={{ color: copiedId === m.id ? C.waterDeep : C.inkSoft, transition: "transform 120ms ease" }}
+                        aria-label={copiedId === m.id ? "Хуулагдлаа" : "Хуулах"}>
+                        {copiedId === m.id
+                          ? <Check size={14} strokeWidth={2.6} />
+                          : <Copy size={14} strokeWidth={2.2} />}
+                      </button>
+                    )}
+                    <button onClick={() => remove(m.id)}
+                      className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90"
+                      style={{ color: C.peachDeep, transition: "transform 120ms ease" }} aria-label="Хадгалснаас хасах">
+                      <Trash2 size={14} strokeWidth={2.2} />
+                    </button>
+                  </div>
+                </div>
+                <div className={`rounded-[16px] text-[13px] font-semibold ${media ? "p-1.5" : "px-3 py-2"}`}
+                  style={draw
+                    ? { background: "transparent", border: "none", padding: 0 }
+                    : {
+                      background: mine ? C.lilacDeep : C.cardIn, color: mine ? "#fff" : C.ink,
+                      border: mine ? "none" : `1.5px solid ${C.line}`,
+                    }}>
+                  <MessageBody m={m} />
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Профайл ── */
-function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, setAvatar, profileName, chibiEnabled, setChibiEnabled, onBack }) {
+function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, setAvatar, profileName, chibiEnabled, setChibiEnabled, savedCount, onOpenSaved, accountKey, myStatus, onBack }) {
   const [picking, setPicking] = useState(false);
   const fileRef = useRef(null);
   const done = items.filter((i) => i.done).length;
@@ -1532,8 +2413,14 @@ function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, 
         <div className="text-center">
           <div className="text-[17px] font-extrabold" style={{ color: C.ink }}>{profileName}</div>
           <div className="text-[12px] font-semibold" style={{ color: C.inkSoft }}>Төвлөрөх Хамтрах</div>
+          {myStatus && (
+            <div className="text-[12.5px] font-bold mt-1.5 px-3 py-1 rounded-full inline-block"
+              style={{ background: C.cardIn, color: C.ink }}>{myStatus}</div>
+          )}
         </div>
       </div>
+
+      <StatusCard accountKey={accountKey} status={myStatus} />
 
       <ChangePasswordCard />
 
@@ -1557,6 +2444,25 @@ function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, 
           <input ref={fileRef} type="file" accept="image/*" onChange={onUpload} className="hidden" />
         </Card>
       )}
+
+      <button onClick={onOpenSaved} className="w-full text-left mb-4 active:scale-[0.99]"
+        style={{ transition: "transform 150ms ease" }}>
+        <Card tint="#F8F4FC">
+          <div className="flex items-center gap-3">
+            <span className="w-9 h-9 rounded-2xl flex items-center justify-center shrink-0"
+              style={{ background: C.lilacDeep, color: "#fff" }}>
+              <Bookmark size={16} strokeWidth={2.4} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Хадгалсан чат</div>
+              <div className="text-[11.5px] font-bold" style={{ color: C.inkSoft }}>
+                {savedCount > 0 ? `${savedCount} зурвас` : "Дурсамжтай зурвасаа энд хадгал"}
+              </div>
+            </div>
+            <ChevronLeft size={16} strokeWidth={2.6} style={{ color: C.inkSoft, transform: "rotate(180deg)" }} />
+          </div>
+        </Card>
+      </button>
 
       <div className="text-[13px] font-extrabold mb-2.5" style={{ color: C.ink }}>Өнөөдрийн явц</div>
       <div className="grid grid-cols-2 gap-3">
@@ -1611,7 +2517,7 @@ function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, 
 }
 
 /* ── Хамтрагчийн явц (зөвхөн харах) ── */
-function PartnerScreen({ partner, accountKey, partnerKey, onBack }) {
+function PartnerScreen({ partner, accountKey, partnerKey, partnerStatus, onBack }) {
   const items = partner?.items || [];
   const done = items.filter((i) => i.done).length;
   const stTotal = (partner?.screenApps || []).reduce((s, a) => s + a.min, 0) + (partner?.appMin || 0);
@@ -1638,6 +2544,10 @@ function PartnerScreen({ partner, accountKey, partnerKey, onBack }) {
       <div className="flex flex-col items-center gap-3 mb-5">
         <img src={partner?.avatar || IC_PROFILE} alt="" className="w-20 h-20 rounded-[26px] object-cover"
           style={{ border: `2px solid ${C.line2}` }} />
+        {partnerStatus && (
+          <div className="text-[12.5px] font-bold px-3.5 py-1.5 rounded-full text-center"
+            style={{ background: C.cardIn, color: C.ink }}>{partnerStatus}</div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3 mb-5">
@@ -1747,7 +2657,7 @@ function LoginScreen() {
 }
 
 /* ── Нүүр ── */
-function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justReset, avatar, profileName, screenApps, appMin, partner, partnerName, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
+function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justReset, avatar, profileName, screenApps, appMin, partner, partnerName, partnerStatus, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
   const now = new Date();
   const greet = (clock.h < 11 ? "Өглөөний мэнд" : clock.h < 18 ? "Өдрийн мэнд" : "Оройн мэнд") + (profileName ? `, ${profileName}` : "");
   const done = items.filter((i) => i.done).length;
@@ -1837,6 +2747,9 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
               <img src={partner.avatar || IC_PROFILE} alt="" className="w-12 h-12 rounded-2xl object-cover mb-2"
                 style={{ border: `1.5px solid ${C.line}` }} />
               <div className="text-[13.5px] font-extrabold mb-1.5" style={{ color: C.ink }}>{partner.name}</div>
+              {partnerStatus && (
+                <div className="text-[11.5px] font-bold mb-1.5 leading-snug" style={{ color: C.ink }}>{partnerStatus}</div>
+              )}
               <div className="text-[11.5px] font-bold" style={{ color: C.peachDeep }}>Явцыг харах →</div>
             </Card>
           ) : partnerName ? (
@@ -1863,6 +2776,19 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
       )}
 
       <HomeCarousel />
+
+      <Card tint="#F4FBFE" className="mb-3" onClick={() => go("map")}>
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: C.waterDeep }}>
+            <MapPin size={17} strokeWidth={2.2} color="#fff" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Газрын зураг</div>
+            <div className="text-[11.5px] font-bold" style={{ color: C.inkSoft }}>Хоёулангийнхаа байршлыг шууд харах</div>
+          </div>
+          <ChevronLeft size={16} strokeWidth={2.6} style={{ color: C.inkSoft, transform: "rotate(180deg)" }} />
+        </div>
+      </Card>
 
       <Card tint="#F8F4FC" className="mb-3" onClick={() => go("chat")}>
         <div className="flex items-center gap-3">
@@ -1923,6 +2849,12 @@ export default function App() {
      mount/unmount болох мөч бүрд дуудагддаг тул энэ асуудлыг арилгана. */
   const [screenEl, setScreenEl] = useState(null);
   useSwipeBack(screenEl, () => go("home"), tab !== "home");
+
+  /* Хадгалсан зурвасын id-нууд. Чат дээр товчийн төлөв, профайл дээр тоо
+     хоёуланд нь хэрэгтэй тул нэг л listener-ийг энд барина. */
+  const [savedIds, setSavedIds] = useState(() => new Set());
+  const [myStatus, setMyStatus] = useState("");
+  const [partnerStatus, setPartnerStatus] = useState("");
   const [ml, setMl] = useState(saved.ml ?? 750);
   const [log, setLog] = useState(saved.log ?? [{ v: 500, t: "08:20" }, { v: 250, t: "11:05" }]);
   const [weight, setWeight] = useState(saved.weight ?? 60);
@@ -1996,6 +2928,26 @@ export default function App() {
   const accountKey = user ? accountKeyFromEmail(user.email) : null;
   const profileName = accountKey ? ACCOUNTS[accountKey].name : "";
   const partnerKey = accountKey === "andela" ? "neko" : accountKey === "neko" ? "andela" : null;
+
+  useEffect(() => {
+    if (!accountKey) { setMyStatus(""); return; }
+    const unsub = onSnapshot(profileDoc(accountKey), (s) => setMyStatus(s.data()?.status || ""), () => {});
+    return unsub;
+  }, [accountKey]);
+
+  useEffect(() => {
+    if (!partnerKey) { setPartnerStatus(""); return; }
+    const unsub = onSnapshot(profileDoc(partnerKey), (s) => setPartnerStatus(s.data()?.status || ""), () => {});
+    return unsub;
+  }, [partnerKey]);
+
+  useEffect(() => {
+    if (!accountKey) { setSavedIds(new Set()); return; }
+    const unsub = onSnapshot(savedItemsCol(accountKey), (snap) => {
+      setSavedIds(new Set(snap.docs.map((d) => d.id)));
+    }, () => {});
+    return unsub;
+  }, [accountKey]);
 
   /* Хамтрагчийн өгөгдөл onSnapshot-оор бодит цагт ирдэг ч, iOS дээр PWA удаан
      дэвсгэрт байгаад буцаж ирэхэд listener үхсэн хэвээр үлддэг. Доош татахад
@@ -2554,14 +3506,18 @@ export default function App() {
                 </div>
               )}
               <div key={tab} className={`${navDir === "back" ? "scr-back" : "scr-in"} ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
-                {tab === "home" && <HomeScreen go={go} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} chatUnread={chatUnread} />}
+                {tab === "home" && <HomeScreen go={go} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} partnerStatus={partnerStatus} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} chatUnread={chatUnread} />}
                 {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "list" && <ListScreen items={items} setItems={setItems} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "screen" && <ScreenTimeScreen {...{ screenApps, screenHistory, appMin }} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} partner={partnerStats} onBack={() => go("home")} />}
-                {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, setAvatar, profileName, chibiEnabled, setChibiEnabled }} gifCount={frames.length} onBack={() => go("home")} />}
-                {tab === "partner" && <PartnerScreen partner={partnerStats} accountKey={accountKey} partnerKey={partnerKey} onBack={() => go("home")} />}
-                {tab === "chat" && <ChatScreen onBack={() => go("home")} profileName={profileName} accountKey={accountKey} partnerKey={partnerKey} onPartnerBubble={handlePartnerBubble} />}
+                {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, setAvatar, profileName, chibiEnabled, setChibiEnabled }} gifCount={frames.length} savedCount={savedIds.size} onOpenSaved={() => go("saved")} accountKey={accountKey} myStatus={myStatus} onBack={() => go("home")} />}
+                {tab === "saved" && <SavedChatScreen accountKey={accountKey} onBack={() => go("profile")} />}
+                {tab === "map" && <LiveMapScreen accountKey={accountKey} partnerKey={partnerKey} profileName={profileName}
+                  partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} avatar={avatar} partnerAvatar={partnerStats?.avatar}
+                  onBack={() => go("home")} />}
+                {tab === "partner" && <PartnerScreen partner={partnerStats} accountKey={accountKey} partnerKey={partnerKey} partnerStatus={partnerStatus} onBack={() => go("home")} />}
+                {tab === "chat" && <ChatScreen onBack={() => go("home")} profileName={profileName} accountKey={accountKey} partnerKey={partnerKey} savedIds={savedIds} onPartnerBubble={handlePartnerBubble} />}
               </div>
             </div>
 
