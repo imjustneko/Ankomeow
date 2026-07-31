@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { ChevronLeft, Check, Copy, Bookmark, BookmarkCheck, Brush, Sticker, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle, Bell, BellOff } from "lucide-react";
+import { ChevronLeft, Check, Copy, Bookmark, BookmarkCheck, Brush, Sticker, Wand2, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle, Bell, BellOff } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, arrayUnion, increment } from "firebase/firestore";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
@@ -1060,6 +1060,72 @@ const DRAW_CHECKER = `repeating-conic-gradient(${C.cardIn} 0% 25%, ${C.card} 0% 
 
 const strokePoints = (strokes) => (strokes || []).reduce((n, s) => n + (s.p?.length || 0) / 2, 0);
 
+/* Catmull-Rom сплайныг кубик Безье болгож SVG зам үүсгэнэ. Хурууны чичиргээтэй
+   олон өнцөгт шугамыг гөлгөр муруй болгодог — "draw assist"-ийн үндэс. */
+function smoothPath(p) {
+  const n = p.length / 2;
+  let d = `M${p[0]} ${p[1]}`;
+  if (n === 2) return d + `L${p[2]} ${p[3]}`;
+  const at = (i) => { const k = Math.max(0, Math.min(n - 1, i)); return [p[2 * k], p[2 * k + 1]]; };
+  for (let i = 0; i < n - 1; i++) {
+    const [x0, y0] = at(i - 1), [x1, y1] = at(i), [x2, y2] = at(i + 1), [x3, y3] = at(i + 2);
+    const c1x = x1 + (x2 - x0) / 6, c1y = y1 + (y2 - y0) / 6;
+    const c2x = x2 - (x3 - x1) / 6, c2y = y2 - (y3 - y1) / 6;
+    d += `C${c1x.toFixed(1)} ${c1y.toFixed(1)},${c2x.toFixed(1)} ${c2y.toFixed(1)},${x2} ${y2}`;
+  }
+  return d;
+}
+
+/* Зурсан шугамыг төгс дүрс рүү "татах". Таарахгүй бол null буцаана —
+   тэгвэл хүний зурсан шугам хэвээрээ үлдэнэ. */
+function assistShape(p) {
+  const n = p.length / 2;
+  if (n < 6) return null;
+  const pts = Array.from({ length: n }, (_, i) => [p[2 * i], p[2 * i + 1]]);
+  let len = 0;
+  for (let i = 1; i < n; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+  if (len < 70) return null; /* хэт богино — цэг, зураас байж мэднэ */
+
+  const [sx, sy] = pts[0], [ex, ey] = pts[n - 1];
+  const span = Math.hypot(ex - sx, ey - sy);
+
+  /* Шулуун: замын урт нь хоёр үзүүрийн шулуун зайтай бараг тэнцүү */
+  if (span / len > 0.92) return { p: [sx, sy, ex, ey], k: "line" };
+
+  /* Хаалттай дүрс биш бол хөндөхгүй */
+  if (span / len > 0.28) return null;
+
+  const cx = pts.reduce((a, q) => a + q[0], 0) / n;
+  const cy = pts.reduce((a, q) => a + q[1], 0) / n;
+  const rs = pts.map((q) => Math.hypot(q[0] - cx, q[1] - cy));
+  const mean = rs.reduce((a, b) => a + b, 0) / n;
+  const dev = Math.sqrt(rs.reduce((a, r) => a + (r - mean) ** 2, 0) / n) / (mean || 1);
+
+  /* Тойрог: төвөөс бүх цэг ойролцоо ижил зайд.
+     САНАМЖ: дан dev хүрэлцэхгүй — тэгш өнцөгтийн dev ч бага гардаг тул
+     хамгийн ойр/хол радиусын харьцааг заавал шалгана (дөрвөлжинд √2 ≈ 1.41). */
+  const rMax = Math.max(...rs), rMin = Math.min(...rs);
+  if (dev < 0.17 && mean > 25 && rMax / (rMin || 1) < 1.3) {
+    const out = [];
+    for (let i = 0; i <= 48; i++) {
+      const t = (i / 48) * Math.PI * 2;
+      out.push(Math.round(cx + mean * Math.cos(t)), Math.round(cy + mean * Math.sin(t)));
+    }
+    return { p: out, k: "circle" };
+  }
+
+  /* Тэгш өнцөгт: цэгүүдийн дийлэнх нь хүрээний ирмэг дээр байрлана */
+  const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const w = x1 - x0, h = y1 - y0;
+  if (w > 40 && h > 40) {
+    const onEdge = pts.filter((q) =>
+      Math.min(q[0] - x0, x1 - q[0]) < w * 0.13 || Math.min(q[1] - y0, y1 - q[1]) < h * 0.13).length / n;
+    if (onEdge > 0.82) return { p: [x0, y0, x1, y0, x1, y1, x0, y1, x0, y0], k: "rect" };
+  }
+  return null;
+}
+
 function DrawingView({ strokes, style }) {
   return (
     <svg viewBox={`0 0 ${DRAW_UNITS} ${DRAW_UNITS}`} className="block w-full"
@@ -1069,8 +1135,15 @@ function DrawingView({ strokes, style }) {
         if (p.length < 2) return null;
         /* Ганц товшилт — шугам биш, дугуй толбо */
         if (p.length === 2) return <circle key={i} cx={p[0]} cy={p[1]} r={(s.w || 20) / 2} fill={s.c || "#2B2B2B"} />;
-        let d = "";
-        for (let k = 0; k < p.length; k += 2) d += `${k ? "L" : "M"}${p[k]} ${p[k + 1]}`;
+        /* Туслахаар үүссэн дүрсийг гөлгөрүүлэхгүй — булан нь мохохгүй, шулуун
+           нь шулуун хэвээр үлдэнэ. Хүний зурсныг л гөлгөрүүлнэ. */
+        let d;
+        if (s.k) {
+          d = "";
+          for (let k = 0; k < p.length; k += 2) d += `${k ? "L" : "M"}${p[k]} ${p[k + 1]}`;
+        } else {
+          d = smoothPath(p);
+        }
         return (
           <path key={i} d={d} fill="none" stroke={s.c || "#2B2B2B"} strokeWidth={s.w || 20}
             strokeLinecap="round" strokeLinejoin="round" />
@@ -1086,7 +1159,10 @@ function DrawPad({ stickers, onClose, onSend, onSaveSticker, onSendSticker, onDe
   const [color, setColor] = useState(DRAW_COLORS[0]);
   const [width, setWidth] = useState(DRAW_SIZES[1]);
   const [tray, setTray] = useState(false);
+  const [assist, setAssist] = useState(() => localStorage.getItem("ankomeow-draw-assist") !== "0");
   const [savedFlash, setSavedFlash] = useState(false);
+
+  useEffect(() => { localStorage.setItem("ankomeow-draw-assist", assist ? "1" : "0"); }, [assist]);
   const boxRef = useRef(null);
   const curRef = useRef(null);               /* жинхэнэ (mutable) шугам — фрэйм бүрт хуулбарлана */
   const rafRef = useRef(0);
@@ -1133,7 +1209,9 @@ function DrawPad({ stickers, onClose, onSend, onSaveSticker, onSendSticker, onDe
     curRef.current = null;
     if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = 0; }
     setCur(null);
-    if (s) setStrokes((all) => [...all, s]);
+    if (!s) return;
+    const shape = assist ? assistShape(s.p) : null;
+    setStrokes((all) => [...all, shape ? { ...s, ...shape } : s]);
   };
 
   const saveSticker = () => {
@@ -1203,6 +1281,8 @@ function DrawPad({ stickers, onClose, onSend, onSaveSticker, onSendSticker, onDe
         ))}
       </div>
 
+      {/* Хэрэгслүүд. САНАМЖ: бүгдийг нэг мөрөнд битгий хий — 9 товч утасны
+          өргөнд багтахгүй хальж, Илгээх товч дэлгэцнээс гарч байсан. */}
       <div className="flex items-center gap-1.5 mt-2">
         {DRAW_SIZES.map((w) => (
           <button key={w} onClick={() => setWidth(w)} aria-label="Бийрний зузаан"
@@ -1211,25 +1291,37 @@ function DrawPad({ stickers, onClose, onSend, onSaveSticker, onSendSticker, onDe
             <span className="rounded-full block" style={{ width: w / 3.2, height: w / 3.2, background: color }} />
           </button>
         ))}
+        <div className="flex-1" />
+        <IconBtn onClick={() => setAssist((a) => !a)} label="Зурах туслах" tone={assist ? C.lilacDeep : C.inkSoft}>
+          <Wand2 size={15} strokeWidth={2.4} />
+        </IconBtn>
         <IconBtn onClick={() => setStrokes((a) => a.slice(0, -1))} disabled={empty} label="Буцаах">
           <RotateCcw size={15} strokeWidth={2.4} />
         </IconBtn>
         <IconBtn onClick={() => setStrokes([])} disabled={empty} label="Цэвэрлэх" tone={C.peachDeep}>
           <Trash2 size={15} strokeWidth={2.4} />
         </IconBtn>
-        <IconBtn onClick={saveSticker} disabled={empty} label="Sticker болгож хадгалах"
-          tone={savedFlash ? C.lilacDeep : C.ink}>
-          {savedFlash ? <BookmarkCheck size={15} strokeWidth={2.6} /> : <Bookmark size={15} strokeWidth={2.4} />}
-        </IconBtn>
         <IconBtn onClick={() => setTray((t) => !t)} label="Хадгалсан sticker" tone={tray ? C.lilacDeep : C.ink}>
           <Sticker size={15} strokeWidth={2.4} />
         </IconBtn>
-        <div className="flex-1" />
-        <IconBtn onClick={onClose} label="Хаах"><X size={15} strokeWidth={2.6} /></IconBtn>
-        <button onClick={() => { if (!empty) onSend(strokes); }} disabled={empty} aria-label="Илгээх"
-          className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 active:scale-90 disabled:opacity-35"
-          style={{ background: C.lilacDeep, color: "#fff", transition: "transform 120ms ease" }}>
-          <Send size={15} strokeWidth={2.4} />
+      </div>
+
+      <div className="flex items-center gap-2 mt-2">
+        <button onClick={onClose}
+          className="shrink-0 h-10 px-4 rounded-full text-[12.5px] font-extrabold active:scale-95"
+          style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink, transition: "transform 150ms ease" }}>
+          Хаах
+        </button>
+        <button onClick={saveSticker} disabled={empty}
+          className="flex-1 min-w-0 h-10 rounded-full text-[12.5px] font-extrabold flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-35"
+          style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: savedFlash ? C.lilacDeep : C.ink, transition: "transform 150ms ease" }}>
+          {savedFlash ? <BookmarkCheck size={15} strokeWidth={2.6} /> : <Bookmark size={15} strokeWidth={2.4} />}
+          {savedFlash ? "Хадгаллаа" : "Sticker"}
+        </button>
+        <button onClick={() => { if (!empty) onSend(strokes); }} disabled={empty}
+          className="flex-1 min-w-0 h-10 rounded-full text-[12.5px] font-extrabold flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-35"
+          style={{ background: C.lilacDeep, color: "#fff", transition: "transform 150ms ease" }}>
+          <Send size={15} strokeWidth={2.4} /> Илгээх
         </button>
       </div>
     </div>
@@ -1246,7 +1338,16 @@ const MAP_W = 212;
 const MAP_H = 142;
 
 const MAP_MIN_Z = 3;
-const MAP_MAX_Z = 19; /* OSM растер tile-ийн дээд түвшин */
+const MAP_MAX_Z = 19;
+
+/* Tile эх үүсвэр. OSM-ийн үндсэн загвар хуучинсаг харагддаг тул CARTO Voyager-ыг
+   ашиглана — ижил OSM өгөгдөл (өдөр бүр шинэчлэгддэг) боловч орчин үеийн загвартай,
+   @2x retina хувилбартай тул утсан дээр хурц. Хоёулаа түлхүүргүй, үнэгүй. */
+const MAP_RETINA = typeof window !== "undefined" && window.devicePixelRatio > 1.3 ? "@2x" : "";
+const tileUrl = (layer, z, x, y) => (layer === "sat"
+  ? `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`
+  : `https://basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}${MAP_RETINA}.png`);
+const MAP_CREDIT = { map: "© OpenStreetMap · CARTO", sat: "© Esri" };
 
 /* WGS84 → Web Mercator дэлхийн пиксел координат (тухайн zoom дээр) */
 function worldPx(lat, lng, z) {
@@ -1322,7 +1423,7 @@ function MapView({ lat, lng }) {
       <div className="relative overflow-hidden rounded-[14px]"
         style={{ height: MAP_H, background: C.cardIn, border: `1.5px solid ${C.line}` }}>
         {tiles.map((t) => (
-          <img key={t.key} src={`https://tile.openstreetmap.org/${MAP_ZOOM}/${t.x}/${t.y}.png`}
+          <img key={t.key} src={tileUrl("map", MAP_ZOOM, t.x, t.y)}
             alt="" loading="lazy" onError={(e) => { e.currentTarget.style.visibility = "hidden"; }}
             style={{ position: "absolute", left: t.left, top: t.top, width: MAP_TILE, height: MAP_TILE, maxWidth: "none" }} />
         ))}
@@ -1343,6 +1444,7 @@ function MapView({ lat, lng }) {
    Гадны сан (Leaflet/Google) ашиглахгүй: tile-уудыг өөрсдөө байрлуулж, чирэх
    болон хоёр хурууны zoom-ыг pointer эвентээр барина. Бүрэн үнэгүй. */
 function TileMap({ center, zoom, onView, markers = [], height = 320, className = "" }) {
+  const [layer, setLayer] = useState("map");
   const boxRef = useRef(null);
   const [size, setSize] = useState({ w: 0, h: 0 }); /* ResizeObserver бөглөх хүртэл юу ч зурахгүй */
   const ptrsRef = useRef(new Map()); /* pointerId → {x,y} */
@@ -1428,7 +1530,7 @@ function TileMap({ center, zoom, onView, markers = [], height = 320, className =
       className={`relative overflow-hidden ${className}`}
       style={{ height, touchAction: "none", background: C.cardIn, border: `1.5px solid ${C.line}` }}>
       {tiles.map((t) => (
-        <img key={`${zoom}/${t.key}`} src={`https://tile.openstreetmap.org/${zoom}/${t.x}/${t.y}.png`}
+        <img key={`${layer}/${zoom}/${t.key}`} src={tileUrl(layer, zoom, t.x, t.y)}
           alt="" draggable={false} onError={(e) => { e.currentTarget.style.visibility = "hidden"; }}
           style={{ position: "absolute", left: t.left, top: t.top, width: MAP_TILE, height: MAP_TILE, maxWidth: "none" }} />
       ))}
@@ -1463,6 +1565,13 @@ function TileMap({ center, zoom, onView, markers = [], height = 320, className =
         );
       })}
 
+      <button onClick={() => setLayer((l) => (l === "map" ? "sat" : "map"))}
+        aria-label={layer === "map" ? "Хиймэл дагуул" : "Энгийн зураг"}
+        className="absolute right-2 top-2 h-8 px-3 rounded-full text-[11px] font-extrabold active:scale-90"
+        style={{ background: C.card, border: `1.6px solid ${C.line2}`, color: C.ink, transition: "transform 120ms ease" }}>
+        {layer === "map" ? "🛰 Дагуул" : "🗺 Зураг"}
+      </button>
+
       <div className="absolute right-2 bottom-2 flex flex-col gap-1.5">
         {[["+", 1], ["−", -1]].map(([sign, d]) => (
           <button key={sign} onClick={() => zoomAt(zoom + d, w / 2, h / 2)} aria-label={d > 0 ? "Ойртуулах" : "Холдуулах"}
@@ -1475,7 +1584,7 @@ function TileMap({ center, zoom, onView, markers = [], height = 320, className =
 
       <span className="absolute left-1.5 bottom-1 text-[8.5px] font-bold px-1 rounded"
         style={{ background: "rgba(255,253,248,.75)", color: C.inkSoft }}>
-        © OpenStreetMap
+        {MAP_CREDIT[layer]}
       </span>
     </div>
   );
@@ -1554,6 +1663,7 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onP
   const [reactingTo, setReactingTo] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
   const [showDraw, setShowDraw] = useState(false);
+  const [sendError, setSendError] = useState("");
   const [stickers, setStickers] = useState([]);
   const listRef = useRef(null);
   const lastPartnerBubbleRef = useRef(null);
@@ -1592,9 +1702,12 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onP
   }, [messages.length]);
 
   const send = (payload) => {
+    /* Алдааг чимээгүй залгихгүй — өмнө нь илгээгдээгүйг мэдэх арга байхгүй байв */
     addDoc(collection(db, "rooms", CHAT_ROOM, "messages"), {
       sender: accountKey, senderName: profileName, createdAt: serverTimestamp(), ...payload,
-    }).catch(() => {});
+    }).catch((e) => setSendError(e?.code === "permission-denied"
+      ? "Илгээх эрх алга. Firestore дүрмээ шалгана уу."
+      : "Илгээж чадсангүй. Холболтоо шалгаад дахин оролдоно уу."));
 
     notifyPartner(auth, {
       to: partnerKey,
@@ -1823,6 +1936,14 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onP
             <Pill key={r.key} onClick={() => sendReaction(r)} className="flex-1 py-2 text-[12px]">{r.label}</Pill>
           ))}
         </div>
+      )}
+
+      {sendError && (
+        <button onClick={() => setSendError("")}
+          className="w-full text-left text-[11.5px] font-bold rounded-2xl px-3 py-2 mb-2"
+          style={{ background: "#FEF6F1", border: `1.5px solid ${C.peach}`, color: C.peachDeep }}>
+          {sendError} (хаах)
+        </button>
       )}
 
       {showDraw && (
