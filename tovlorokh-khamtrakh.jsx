@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { ChevronLeft, Check, Copy, Bookmark, BookmarkCheck, Brush, Sticker, Wand2, Gift, CalendarHeart, Reply, Lock, HelpCircle, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle, Bell, BellOff } from "lucide-react";
+import { ChevronLeft, Check, Copy, Bookmark, BookmarkCheck, Brush, Sticker, Wand2, Gift, CalendarHeart, Reply, Lock, HelpCircle, Mic, Trash2, Pause, Play, Upload, RotateCcw, X, MapPin, Pencil, Send, Heart, MessageCircle, Image as ImageIcon, CheckCheck, Download, Share2, LogOut, Plus, FileText, RefreshCw, Trophy, AlertTriangle, Bell, BellOff } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, arrayUnion, increment } from "firebase/firestore";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
@@ -999,6 +999,54 @@ const chatTime = (ts) => {
 const savedItemsCol = (accountKey) => collection(db, "rooms", CHAT_ROOM, "saved", accountKey, "items");
 const savedItemDoc = (accountKey, id) => doc(db, "rooms", CHAT_ROOM, "saved", accountKey, "items", id);
 
+/* ── Хүнд хавсралт (зураг, дуу) ──
+   Урьд нь зураг зурвасын баримт дотроо data URL хэлбэрээр сууж байсан. Чат нь
+   сүүлийн 100 зурвасыг onSnapshot-оор БҮТНЭЭР татдаг тул зураг олон байх тусам
+   чат нээгдэх нь удааширч, үнэгүй квот шатдаг байв.
+   Одоо зурвас нь зөвхөн blobId агуулж, бодит өгөгдөл тусдаа баримтад хэвтэнэ.
+   Ингэснээр зурвасын жагсаалт бага байж, хавсралт нь харагдах үедээ л татагдана. */
+const blobsCol = () => collection(db, "rooms", CHAT_ROOM, "blobs");
+const blobDoc = (id) => doc(db, "rooms", CHAT_ROOM, "blobs", id);
+
+/* Нэг blob-ыг хоёр удаа татахгүйн тулд санах ойд кэшлэнэ.
+   Зэрэг хүсэлтийг ч нэгтгэнэ (нэг зураг хоёр газар харагдаж болно). */
+const blobCache = new Map();
+const blobPending = new Map();
+function loadBlob(id) {
+  if (!id) return Promise.resolve(null);
+  if (blobCache.has(id)) return Promise.resolve(blobCache.get(id));
+  if (blobPending.has(id)) return blobPending.get(id);
+  const p = getDoc(blobDoc(id))
+    .then((s) => {
+      const data = s.exists() ? s.data()?.data || null : null;
+      blobCache.set(id, data);
+      blobPending.delete(id);
+      return data;
+    })
+    .catch(() => { blobPending.delete(id); return null; });
+  blobPending.set(id, p);
+  return p;
+}
+
+async function putBlob(dataUrl, kind) {
+  const ref = await addDoc(blobsCol(), { data: dataUrl, kind, createdAt: serverTimestamp() });
+  blobCache.set(ref.id, dataUrl); /* өөрийн илгээсэн зүйл шууд харагдана */
+  return ref.id;
+}
+
+/* blobId-аар өгөгдөл татаж, ирэх хүртэл орлуулагч харуулна */
+function useBlob(id, inline) {
+  const [data, setData] = useState(inline || (id ? blobCache.get(id) ?? null : null));
+  useEffect(() => {
+    if (inline) { setData(inline); return; }
+    if (!id) { setData(null); return; }
+    let alive = true;
+    loadBlob(id).then((d) => { if (alive) setData(d); });
+    return () => { alive = false; };
+  }, [id, inline]);
+  return data;
+}
+
 /* Өдрийн асуулт — өдөр бүрд нэг баримт, хоёулангийн хариулт дотор нь */
 const qaCol = () => collection(db, "rooms", CHAT_ROOM, "qa");
 const qaDoc = (d) => doc(db, "rooms", CHAT_ROOM, "qa", d);
@@ -1026,7 +1074,7 @@ const stickersCol = (accountKey) => collection(db, "rooms", CHAT_ROOM, "stickers
 const stickerDoc = (accountKey, id) => doc(db, "rooms", CHAT_ROOM, "stickers", accountKey, "items", id);
 
 /* Firestore нь undefined утгыг хүлээж авдаггүй тул зөвхөн байгаа талбарыг хуулна. */
-const SAVED_FIELDS = ["text", "label", "key", "gifUrl", "image", "strokes", "lat", "lng"];
+const SAVED_FIELDS = ["text", "label", "key", "gifUrl", "image", "blobId", "dur", "strokes", "lat", "lng"];
 const savedSnapshot = (m) => {
   const out = {
     type: m.type,
@@ -1605,12 +1653,69 @@ function TileMap({ center, zoom, onView, markers = [], height = 320, className =
   );
 }
 
+/* Хавсаргасан зураг. m.image нь хуучин зурвасуудын нийцтэй байдлын төлөө. */
+function ChatImage({ m }) {
+  const src = useBlob(m.blobId, m.image);
+  if (!src) {
+    return (
+      <div className="rounded-[14px] flex items-center justify-center"
+        style={{ width: 180, height: 130, background: C.cardIn }}>
+        <ImageIcon size={22} strokeWidth={2} style={{ color: C.inkSoft, opacity: 0.6 }} />
+      </div>
+    );
+  }
+  return <img src={src} alt="" className="rounded-[14px] max-w-full block" style={{ maxHeight: 220 }} />;
+}
+
+const durText = (s) => `${Math.floor((s || 0) / 60)}:${String(Math.round(s || 0) % 60).padStart(2, "0")}`;
+
+/* Дуут зурвасын тоглуулагч — жижигхэн, өөрийн загвартай */
+function VoiceBubble({ m, mine }) {
+  const src = useBlob(m.blobId, m.audio);
+  const ref = useRef(null);
+  const [playing, setPlaying] = useState(false);
+  const [pos, setPos] = useState(0);
+  const total = m.dur || 0;
+  const tone = mine ? "#fff" : C.lilacDeep;
+
+  const toggle = (e) => {
+    e.stopPropagation(); /* бөмбөлгийн реакц цэсийг нээхгүй */
+    const a = ref.current;
+    if (!a) return;
+    if (a.paused) a.play().catch(() => {}); else a.pause();
+  };
+
+  return (
+    <div className="flex items-center gap-2.5" style={{ minWidth: 160 }}>
+      <audio ref={ref} src={src || undefined} preload="none"
+        onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
+        onEnded={() => { setPlaying(false); setPos(0); }}
+        onTimeUpdate={(e) => setPos(e.currentTarget.currentTime)} />
+      <button onClick={toggle} disabled={!src} aria-label={playing ? "Түр зогсоох" : "Тоглуулах"}
+        className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 active:scale-90 disabled:opacity-40"
+        style={{ background: mine ? "rgba(255,255,255,.22)" : C.cardIn, color: tone, transition: "transform 120ms ease" }}>
+        {playing ? <Pause size={16} strokeWidth={2.6} /> : <Play size={16} strokeWidth={2.6} />}
+      </button>
+      <div className="flex-1 min-w-0">
+        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: mine ? "rgba(255,255,255,.3)" : C.cardIn }}>
+          <div className="h-full rounded-full"
+            style={{ width: `${total ? Math.min(100, (pos / total) * 100) : 0}%`, background: tone, transition: "width 120ms linear" }} />
+        </div>
+        <div className="text-[10px] font-bold mt-1" style={{ color: mine ? "rgba(255,255,255,.85)" : C.inkSoft }}>
+          {durText(playing || pos ? pos : total)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* Бөмбөлөгний дотоод агуулга — чат болон хадгалсан чат хоёулаа ашиглана */
-function MessageBody({ m }) {
+function MessageBody({ m, mine }) {
   return (
     <>
       {m.type === "text" && m.text}
-      {m.type === "image" && <img src={m.image} alt="" className="rounded-[14px] max-w-full block" style={{ maxHeight: 220 }} />}
+      {m.type === "image" && <ChatImage m={m} />}
+      {m.type === "voice" && <VoiceBubble m={m} mine={mine} />}
       {m.type === "drawing" && <div style={{ width: 190, maxWidth: "100%" }}><DrawingView strokes={m.strokes} /></div>}
       {m.type === "reaction" && m.gifUrl && (
         <div>
@@ -1664,6 +1769,7 @@ function messagePreview(payload) {
     case "reaction": return payload.label || "Реакц илгээлээ";
     case "image": return "📷 Зураг илгээлээ";
     case "drawing": return "🎨 Зураг зурлаа";
+    case "voice": return "🎤 Дуут зурвас илгээлээ";
     case "location": return "📍 Байршлаа илгээлээ";
     default: return "Шинэ зурвас";
   }
@@ -1680,6 +1786,11 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onP
   const [showDraw, setShowDraw] = useState(false);
   const [showAttach, setShowAttach] = useState(false);
   const [showStickers, setShowStickers] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recSecs, setRecSecs] = useState(0);
+  const recRef = useRef(null);
+  const recStartRef = useRef(0);
+  const recCancelRef = useRef(false);
   const [sendError, setSendError] = useState("");
   const [replyTo, setReplyTo] = useState(null);   /* { id, senderName, preview } */
   const [flashId, setFlashId] = useState(null);   /* иш татсан зурвас руу үсрэхэд гэрэлтүүлнэ */
@@ -1781,16 +1892,31 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onP
   };
 
   /* Хадгалах/буцаах. Хадгалахдаа тухайн үеийн агуулгыг бүтнээр нь хуулна. */
-  const toggleSave = (m) => {
+  const toggleSave = async (m) => {
     if (savedIds.has(m.id)) {
+      const item = await getDoc(savedItemDoc(accountKey, m.id)).catch(() => null);
+      const bid = item?.data()?.blobId;
       deleteDoc(savedItemDoc(accountKey, m.id)).catch(() => {});
-    } else {
-      setDoc(savedItemDoc(accountKey, m.id), { ...savedSnapshot(m), savedAt: serverTimestamp() }).catch(() => {});
+      if (bid) deleteDoc(blobDoc(bid)).catch(() => {});
+      return;
     }
+    /* Хавсралтыг ТУСДАА хуулбарлана. Эх зурвасаа устгахад blob нь ч устдаг тул
+       заагчийг хуваалцвал хадгалсан хуулбар хоосорно. Хуулбар нь мөн жагсаалтыг
+       хөнгөн байлгана — өгөгдөл нь saved баримт дотор биш, тусдаа хэвтэнэ. */
+    const snap = savedSnapshot(m);
+    if (m.blobId) {
+      const data = await loadBlob(m.blobId);
+      snap.blobId = data ? await putBlob(data, m.type).catch(() => null) : null;
+      if (!snap.blobId) delete snap.blobId;
+    }
+    setDoc(savedItemDoc(accountKey, m.id), { ...snap, savedAt: serverTimestamp() }).catch(() => {});
   };
 
   const deleteMessage = (id) => {
+    const m = messages.find((x) => x.id === id);
     deleteDoc(doc(db, "rooms", CHAT_ROOM, "messages", id)).catch(() => {});
+    /* Хавсралтыг ч устгана — эс бөгөөс зураг устгасан ч сангаас арилахгүй */
+    if (m?.blobId) deleteDoc(blobDoc(m.blobId)).catch(() => {});
     setReactingTo(null);
   };
 
@@ -1834,10 +1960,84 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onP
         quality -= 0.15;
         dataUrl = await compressImage(file, 900, quality);
       }
-      if (dataUrl.length <= 900000) send({ type: "image", image: dataUrl });
-    } catch {}
+      if (dataUrl.length <= 900000) {
+        const blobId = await putBlob(dataUrl, "image");
+        send({ type: "image", blobId });
+      } else {
+        setSendError("Зураг хэт том байна. Өөр зураг сонгоно уу.");
+      }
+    } catch {
+      setSendError("Зургийг илгээж чадсангүй.");
+    }
     setUploading(false);
   };
+
+  /* ── Дуут зурвас ──
+     iOS Safari нь webm дэмждэггүй тул дэмжигдэх төрлийг эрэмбээр шалгана. */
+  const pickMime = () => {
+    const opts = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/aac", ""];
+    return opts.find((t) => !t || (window.MediaRecorder?.isTypeSupported?.(t) ?? false)) ?? "";
+  };
+
+  const startRec = async () => {
+    setShowAttach(false);
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      setSendError("Энэ хөтөч дуу бичихийг дэмжихгүй байна.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = pickMime();
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      const chunks = [];
+      rec.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
+      rec.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const secs = Math.round((Date.now() - recStartRef.current) / 1000);
+        setRecording(false);
+        setRecSecs(0);
+        if (recCancelRef.current || !chunks.length || secs < 1) return;
+        try {
+          const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+          const dataUrl = await new Promise((res, rej) => {
+            const r = new FileReader();
+            r.onerror = rej;
+            r.onload = () => res(r.result);
+            r.readAsDataURL(blob);
+          });
+          /* Firestore-ийн нэг баримт 1MB. base64 нь 33% нэмэгддэг тул шалгана. */
+          if (dataUrl.length > 900000) { setSendError("Бичлэг хэт урт байна. Богиноор оролдоно уу."); return; }
+          const blobId = await putBlob(dataUrl, "voice");
+          send({ type: "voice", blobId, dur: secs });
+        } catch {
+          setSendError("Дуут зурвасыг илгээж чадсангүй.");
+        }
+      };
+      recRef.current = rec;
+      recCancelRef.current = false;
+      recStartRef.current = Date.now();
+      rec.start();
+      setRecording(true);
+    } catch {
+      setSendError("Микрофоны зөвшөөрөл өгөгдөөгүй байна.");
+    }
+  };
+
+  const stopRec = (cancel) => {
+    recCancelRef.current = !!cancel;
+    try { recRef.current?.stop(); } catch {}
+  };
+
+  /* Бичиж байх хугацааг харуулах ба 60 секундэд автоматаар зогсоох */
+  useEffect(() => {
+    if (!recording) return;
+    const id = setInterval(() => {
+      const s = Math.round((Date.now() - recStartRef.current) / 1000);
+      setRecSecs(s);
+      if (s >= 60) stopRec(false);
+    }, 250);
+    return () => clearInterval(id);
+  }, [recording]);
 
   const lastMineId = [...messages].reverse().find((m) => m.sender === accountKey)?.id;
   /* Хамтрагчийн хамгийн сүүлийн зурвас — chibi үүн рүү очиж заана */
@@ -1915,7 +2115,7 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onP
                       <span className="text-[11px] font-semibold block opacity-80 line-clamp-2">{m.replyTo.preview}</span>
                     </button>
                   )}
-                  <MessageBody m={m} />
+                  <MessageBody m={m} mine={mine} />
                 </div>
 
                 {reactingTo === m.id && (
@@ -2019,7 +2219,7 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onP
       {/* Хавсралтын панел. Дөрвөн товчийг оролтын мөрөнд зэрэгцүүлэхэд бичих
           талбар хэт нарийсдаг байсан тул нэг "+"-ийн ард цуглуулав. */}
       {showAttach && (
-        <div className="grid grid-cols-5 gap-2 mb-2">
+        <div className="grid grid-cols-3 gap-2 mb-2">
           {[
             { key: "draw", label: "Зурах", icon: <Brush size={18} strokeWidth={2.2} />, c: C.lilacDeep,
               on: () => { setShowAttach(false); setShowReact(false); setShowDraw(true); } },
@@ -2031,6 +2231,8 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onP
               on: () => { setShowAttach(false); sendLocation(); } },
             { key: "react", label: "Реакц", icon: <Heart size={18} strokeWidth={2.2} />, c: C.peachDeep,
               on: () => { setShowAttach(false); setShowDraw(false); setShowReact(true); } },
+            { key: "voice", label: "Дуу хоолой", icon: <Mic size={18} strokeWidth={2.2} />, c: C.ink,
+              on: startRec },
           ].map((a) => (
             <button key={a.key} onClick={a.on} disabled={a.key === "img" && uploading}
               className="flex flex-col items-center gap-1 py-2 rounded-2xl active:scale-95 disabled:opacity-40"
@@ -2085,6 +2287,28 @@ function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onP
             className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 active:scale-90"
             style={{ color: C.inkSoft, transition: "transform 120ms ease" }}>
             <X size={13} strokeWidth={2.6} />
+          </button>
+        </div>
+      )}
+
+      {recording && (
+        <div className="flex items-center gap-3 mb-2 rounded-[20px] px-4 py-3"
+          style={{ background: "#FEF6F1", border: `1.6px solid ${C.peach}` }}>
+          <span className="w-2.5 h-2.5 rounded-full shrink-0"
+            style={{ background: C.peachDeep, animation: "pulse 1s ease-in-out infinite" }} />
+          <div className="flex-1 min-w-0">
+            <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Бичиж байна… {durText(recSecs)}</div>
+            <div className="text-[10.5px] font-bold" style={{ color: C.inkSoft }}>Дээд тал нь 60 секунд</div>
+          </div>
+          <button onClick={() => stopRec(true)} aria-label="Болих"
+            className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center active:scale-90"
+            style={{ background: C.card, border: `1.6px solid ${C.line2}`, color: C.inkSoft, transition: "transform 120ms ease" }}>
+            <X size={15} strokeWidth={2.6} />
+          </button>
+          <button onClick={() => stopRec(false)} aria-label="Илгээх"
+            className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center active:scale-90"
+            style={{ background: C.lilacDeep, color: "#fff", transition: "transform 120ms ease" }}>
+            <Send size={15} strokeWidth={2.4} />
           </button>
         </div>
       )}
@@ -2978,7 +3202,9 @@ function SavedChatScreen({ accountKey, onBack }) {
   };
 
   const remove = (id) => {
+    const it = items.find((x) => x.id === id);
     deleteDoc(savedItemDoc(accountKey, id)).catch(() => {});
+    if (it?.blobId) deleteDoc(blobDoc(it.blobId)).catch(() => {});
   };
 
   return (
@@ -3026,7 +3252,7 @@ function SavedChatScreen({ accountKey, onBack }) {
                       background: mine ? C.lilacDeep : C.cardIn, color: mine ? "#fff" : C.ink,
                       border: mine ? "none" : `1.5px solid ${C.line}`,
                     }}>
-                  <MessageBody m={m} />
+                  <MessageBody m={m} mine={mine} />
                 </div>
               </Card>
             );
@@ -4129,6 +4355,7 @@ export default function App() {
         @keyframes slideIn { from{opacity:0;transform:translateX(26px)} to{opacity:1;transform:none} }
         @keyframes slideBack { from{opacity:0;transform:translateX(-26px)} to{opacity:1;transform:none} }
         @keyframes spin { to{transform:rotate(360deg)} }
+        @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.35;transform:scale(.75)} }
         @keyframes leakL { 0%{transform:translate(0,0) scaleY(.6);opacity:0} 10%{opacity:.9} 70%{transform:translate(-14px,255px) scaleY(1.6);opacity:.7} 100%{transform:translate(-17px,278px) scaleY(1.8);opacity:0} }
         @keyframes leakR { 0%{transform:translate(0,0) scaleY(.6);opacity:0} 10%{opacity:.9} 70%{transform:translate(14px,255px) scaleY(1.6);opacity:.7} 100%{transform:translate(17px,278px) scaleY(1.8);opacity:0} }
         @keyframes puddleBreathe { 0%,100%{transform:scale(1);opacity:.55} 50%{transform:scale(1.06);opacity:.7} }

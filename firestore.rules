@@ -53,6 +53,13 @@ service cloud.firestore {
       allow read, write: if isCouple() && key == myKey();
     }
 
+    /* Чатын хүнд хавсралт (зураг, дуу). Зурвас нь зөвхөн blobId агуулна. */
+    match /rooms/ankomeow-couple/blobs/{blobId} {
+      allow read: if isCouple();
+      allow create: if isCouple();
+      allow delete: if isCouple();
+    }
+
     /* Өдрийн асуулт — хоёулаа өөрийн хариултаа бичнэ */
     match /rooms/ankomeow-couple/qa/{dayId} {
       allow read, write: if isCouple();
