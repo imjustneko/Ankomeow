@@ -4,7 +4,7 @@
    хэвтэнэ. Чат нь сүүлийн 100 зурвасыг бүтнээр татдаг тул энэ нь чат нээгдэх
    хурдыг шийддэг. */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { addDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { Image as ImageIcon, MapPin, Pause, Play } from "lucide-react";
 import { C } from "../lib/theme.js";

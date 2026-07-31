@@ -72,6 +72,36 @@ for (const [f, s] of src) {
   }
 }
 
+/* Гаднын сангийн функцууд импортлогдсон эсэх.
+
+   Дээрх хоёр шалгалт нь төслийн нэрс болон JSX бүрэлдэхүүнийг л мэднэ.
+   Гэтэл `updatePassword(...)` эсвэл `useRef(...)` гэх мэт гаднын дуудлага
+   импортгүй үлдвэл bundler дуугүй өнгөрч, товч дарах эсвэл бөмбөлөг
+   зурагдах мөчид л ReferenceError болдог. Задаргааны дараа ProfileScreen
+   (нууц үг солих) ба message.jsx (дуут зурвас) хоёр яг ингэж эвдэрсэн. */
+const EXTERNAL = {
+  "firebase/auth": ["onAuthStateChanged", "signInWithEmailAndPassword", "updatePassword",
+    "EmailAuthProvider", "reauthenticateWithCredential", "getAuth", "signOut"],
+  "firebase/firestore": ["collection", "addDoc", "doc", "getDoc", "setDoc", "updateDoc",
+    "deleteDoc", "onSnapshot", "query", "orderBy", "limit", "serverTimestamp",
+    "arrayUnion", "increment", "where", "getDocs"],
+  react: ["useState", "useEffect", "useRef", "useMemo", "useCallback", "useReducer"],
+};
+
+for (const [f, s] of src) {
+  const have = imported(s);
+  /* import мөрүүдийг өөрсдийг нь хасна — эс бөгөөс өөрийгөө олно */
+  const body = stripComments(s).replace(/^import .*$/gm, "");
+  for (const [mod, names] of Object.entries(EXTERNAL)) {
+    const missing = names.filter((n) => !have.has(n)
+      && new RegExp(`\\b${n}\\s*[.(]`).test(body));
+    if (missing.length) {
+      bad++;
+      console.error(`✗ ${f}\n    "${mod}"-оос дутуу: ${missing.join(", ")}`);
+    }
+  }
+}
+
 /* JSX доторх бүрэлдэхүүн бүр тодорхойлогдсон эсэх.
 
    Дээрх шалгалт нь зөвхөн ЭНЭ ТӨСЛИЙН нэрсийг мэддэг тул гаднаас ирдэг

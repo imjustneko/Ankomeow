@@ -4,10 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { C } from "../lib/theme.js";
 import { Bar, Card, Header } from "../ui/primitives.jsx";
 import { auth, coupleDoc, profileDoc } from "../lib/firebase.js";
+import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "firebase/auth";
 import { serverTimestamp, setDoc } from "firebase/firestore";
 import { isValidDay } from "../lib/couple.js";
-import { Bookmark, Check, ChevronLeft, LogOut, Moon, Pencil, Sun, Upload } from "lucide-react";
-import { AVATARS } from "../lib/assets.js";
+import { Check, ChevronLeft, LogOut, Moon, Pencil, Sun, Upload } from "lucide-react";
+import { AVATARS, IC_NOTE } from "../lib/assets.js";
 import { compressImage } from "../lib/image.js";
 
 const STATUS_MAX = 80;
@@ -247,10 +248,7 @@ export function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, a
         style={{ transition: "transform 150ms ease" }}>
         <Card tint="#F8F4FC">
           <div className="flex items-center gap-3">
-            <span className="w-9 h-9 rounded-2xl flex items-center justify-center shrink-0"
-              style={{ background: C.lilacDeep, color: "#fff" }}>
-              <Bookmark size={16} strokeWidth={2.4} />
-            </span>
+            <img src={IC_NOTE} alt="" className="w-10 h-10 shrink-0 object-contain" />
             <div className="min-w-0 flex-1">
               <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Хадгалсан чат</div>
               <div className="text-[11.5px] font-bold" style={{ color: C.inkSoft }}>
