@@ -13,6 +13,7 @@ export const NAV_WATER = IMG("nav-water.webp");
 export const NAV_TIME = IMG("nav-time.webp");
 export const NAV_LIST = IMG("nav-list.webp");
 export const NAV_GIF = IMG("nav-gif.webp");
+export const NAV_CHAT = IMG("nav-chat.webp");
 export const IC_HOME = IMG("ic-home.webp");
 export const WELCOME_HERO = IMG("welcome-hero.webp");
 export const LOAD_0 = IMG("load-0.webp");

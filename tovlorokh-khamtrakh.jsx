@@ -21,7 +21,7 @@ import { ChatScreen } from "./src/screens/ChatScreen.jsx";
 import { DrawingView, DrawPad } from "./src/ui/drawing.jsx";
 import {
   IMG, LOGO, IC_PROFILE, IC_WATER, IC_TIME, IC_GIF, IC_CAT, IC_HOME, AVATARS,
-  BG_MAIN, GRAIN, WELCOME_HERO, NAV_HOME, NAV_WATER, NAV_LIST, NAV_TIME, NAV_GIF,
+  BG_MAIN, GRAIN, WELCOME_HERO, NAV_HOME, NAV_WATER, NAV_LIST, NAV_TIME, NAV_GIF, NAV_CHAT,
   CAR_LIST, CAR_WATER, CAR_SCREEN, CAR_GIF,
   LOAD_0, LOAD_25, LOAD_50, LOAD_75, LOAD_90, LOAD_100, LOAD_ALMOST, LOAD_DONE, LOAD_FINISH,
   IC_DATES, IC_CALENDAR, IC_QUESTION, IC_WISH, IC_MAP, IC_CHAT, IC_LOCATION,
@@ -1328,6 +1328,8 @@ export default function App() {
     { id: "list", icon: NAV_LIST, label: "Жагсаалт", c: C.sageDeep, c2: C.sage },
     { id: "screen", icon: NAV_TIME, label: "Дэлгэц", c: C.peachDeep, c2: C.peach },
     { id: "gif", icon: NAV_GIF, label: "GIF", c: C.lilacDeep, c2: C.lilac },
+    /* Чат хамгийн их хэрэглэгддэг тул баруун захад — эрхий хуруунд ойр */
+    { id: "chat", icon: NAV_CHAT, label: "Чат", c: C.peachDeep, c2: C.peach },
   ];
 
   return (
@@ -1499,14 +1501,14 @@ export default function App() {
             </div>
 
             {tab !== "chat" && (
-              <nav className="safe-bottom flex justify-around items-center gap-1 py-2 px-3 mx-4 mb-4 rounded-full shrink-0"
+              <nav className="safe-bottom flex justify-around items-center gap-0.5 py-2 px-2 mx-3 mb-4 rounded-full shrink-0"
                 style={{ background: C.card, border: `1.5px solid ${C.line}`, boxShadow: "0 10px 24px rgba(92,74,58,.14)" }}>
                 {nav.map(({ id, icon, label, c, c2 }) => {
                   const on = tab === id;
                   return (
                     <button key={id} onClick={() => go(id)}
-                      className="flex flex-col items-center justify-center gap-1 px-1.5 py-1.5 rounded-2xl min-h-[44px]">
-                      <span className="w-10 h-10 rounded-2xl flex items-center justify-center overflow-hidden"
+                      className="relative flex flex-col items-center justify-center gap-1 px-0.5 py-1.5 rounded-2xl min-h-[44px] min-w-0">
+                      <span className="w-9 h-9 rounded-2xl flex items-center justify-center overflow-hidden relative shrink-0"
                         style={{
                           background: on ? `linear-gradient(155deg, ${c2 || c} 0%, ${c} 100%)` : C.cardIn,
                           boxShadow: on ? "0 3px 8px rgba(92,74,58,.22)" : "none",
@@ -1514,7 +1516,16 @@ export default function App() {
                         }}>
                         <img src={icon} alt="" className="w-full h-full object-cover" />
                       </span>
-                      <span className="text-[10px] font-extrabold leading-none" style={{ color: on ? C.ink : C.inkSoft }}>{label}</span>
+                      {/* Уншаагүй зурвасыг доод бараас шууд харагдуулна */}
+                      {id === "chat" && chatUnread && (
+                        <span className="absolute w-2.5 h-2.5 rounded-full"
+                          style={{
+                            top: 2, right: 2,
+                            background: C.peachDeep, border: `2px solid ${C.card}`,
+                          }} />
+                      )}
+                      <span className="text-[9.5px] font-extrabold leading-none whitespace-nowrap"
+                        style={{ color: on ? C.ink : C.inkSoft }}>{label}</span>
                     </button>
                   );
                 })}
