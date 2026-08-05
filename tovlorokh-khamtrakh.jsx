@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { ChevronLeft, X, Download, Share2, RefreshCw, Bell, BellOff } from "lucide-react";
 import { collection, addDoc, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, arrayUnion, increment } from "firebase/firestore";
-import { onAuthStateChanged, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 import { pushSupported, pushPermission, requestPushToken, notifyPartner, NOTIFY_ENDPOINT } from "./src/push.js";
 import { useKeyboardInset } from "./src/hooks/useKeyboardInset.js";
 import { useSwipeBack } from "./src/hooks/useSwipeBack.js";
@@ -611,6 +611,22 @@ export default function App() {
   const go = (next, dir) => {
     setNavDir(dir || (next === "home" ? "back" : "in"));
     setTab(next);
+  };
+
+  /* Гарах.
+
+     Утсанд хадгалсан хуулбарыг ЗААВАЛ цэвэрлэнэ: тэр нь эзнээр нь
+     тусгаарлагдаагүй нэг түлхүүрт сууддаг тул үлдээвэл дараа нь нөгөө хүн
+     нэвтрэхэд өмнөх хүний ус/жагсаалт нь шинэ эзний нэрээр Firestore руу
+     бичигдэж, түүний бүртгэлийг дарж бичих байв.
+
+     Дараа нь хуудсыг дахин ачаална — санах ойд үлдсэн төлөвийг гар аргаар
+     нэг бүрчлэн тэглэхээс найдвартай бөгөөд шинэ хүн цэвэр аппаар эхэлнэ.
+     Firestore дэх өөрийн бүртгэл хэвээрээ, зөвхөн энэ утасны хуулбар арилна. */
+  const logout = async () => {
+    try { await signOut(auth); } catch {}
+    try { localStorage.removeItem(STORE_KEY); } catch {}
+    window.location.reload();
   };
 
   useKeyboardInset();
@@ -1386,7 +1402,7 @@ export default function App() {
                 {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, profileName, day }} gifCount={frames.length} savedCount={savedIds.size} onOpenSaved={() => go("saved")} accountKey={accountKey} myStatus={myStatus} mySong={mySong} coupleInfo={coupleInfo} onEdit={() => go("editprofile")} onSettings={() => go("settings")} />}
                 {tab === "editprofile" && <EditProfileScreen avatar={avatar} setAvatar={setAvatar} accountKey={accountKey} myStatus={myStatus} mySong={mySong} coupleInfo={coupleInfo} onBack={() => go("profile", "back")} />}
-                {tab === "settings" && <SettingsScreen {...{ chibiEnabled, setChibiEnabled, themeMode, setThemeMode }} onBack={() => go("profile", "back")} />}
+                {tab === "settings" && <SettingsScreen {...{ chibiEnabled, setChibiEnabled, themeMode, setThemeMode }} onLogout={logout} onBack={() => go("profile", "back")} />}
                 {tab === "saved" && <SavedChatScreen accountKey={accountKey} onBack={() => go("profile", "back")} />}
                 {tab === "cal" && <CalendarScreen accountKey={accountKey} partnerKey={partnerKey}
                   partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} profileName={profileName}

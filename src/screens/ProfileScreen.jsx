@@ -359,8 +359,16 @@ export function EditProfileScreen({ avatar, setAvatar, accountKey, myStatus, myS
 
 /* ── Тохиргоо (☰) ──
    Аппын үйлдлийг өөрчилдөг бүх зүйл энд. */
-export function SettingsScreen({ chibiEnabled, setChibiEnabled, themeMode, setThemeMode, onBack }) {
-  const exitApp = () => { window.close(); };
+export function SettingsScreen({ chibiEnabled, setChibiEnabled, themeMode, setThemeMode, onLogout, onBack }) {
+  /* Гарах нь буцаагдахгүй үйлдэл тул нэг дарахад шууд гүйцэтгэхгүй — товч
+     эхлээд баталгаажуулах төлөвт орно. Апп хаа ч харилцах цонх ашигладаггүй
+     тул confirm() биш, товч өөрөө хоёр алхамтай болно. */
+  const [confirming, setConfirming] = useState(false);
+  useEffect(() => {
+    if (!confirming) return;
+    const t = setTimeout(() => setConfirming(false), 6000);
+    return () => clearTimeout(t);
+  }, [confirming]);
 
   return (
     <div>
@@ -415,11 +423,19 @@ export function SettingsScreen({ chibiEnabled, setChibiEnabled, themeMode, setTh
 
       <ChangePasswordCard />
 
-      <button onClick={exitApp}
+      <button onClick={() => (confirming ? onLogout() : setConfirming(true))}
         className="w-full rounded-full py-3 text-[12.5px] font-extrabold flex items-center justify-center gap-2 active:scale-[0.97]"
-        style={{ background: C.card, border: `1.6px solid ${C.line2}`, color: C.peachDeep, transition: "transform 150ms ease" }}>
-        <LogOut size={15} strokeWidth={2.4} /> Аппаас гарах
+        style={{
+          background: confirming ? C.peachDeep : C.card,
+          border: `1.6px solid ${confirming ? C.peachDeep : C.line2}`,
+          color: confirming ? "#fff" : C.peachDeep,
+          transition: "transform 150ms ease, background 200ms ease",
+        }}>
+        <LogOut size={15} strokeWidth={2.4} /> {confirming ? "Дарвал гарна — итгэлтэй байна уу?" : "Гарах"}
       </button>
+      <p className="text-[11px] font-bold text-center mt-2 leading-snug" style={{ color: C.inkSoft }}>
+        Гарахад энэ утсанд хадгалсан өдрийн бүртгэл цэвэрлэгдэнэ.
+      </p>
     </div>
   );
 }
