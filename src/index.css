@@ -25,6 +25,30 @@ input, textarea, select { font-size: 16px !important; }
 }
 .miss-heart { animation: miss-heart-rise 900ms cubic-bezier(.22,1,.36,1) forwards; }
 
+/* Чат дахь "санаж байна" карт — ирэх мөчид томорч гэрэлтэнэ */
+@keyframes miss-card-in {
+  from { opacity: 0; transform: scale(.86); }
+  60%  { transform: scale(1.03); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes miss-card-glow {
+  from, to { box-shadow: 0 0 0 5px rgba(232,130,92,.07), 0 8px 22px rgba(232,130,92,.20); }
+  50%      { box-shadow: 0 0 0 12px rgba(232,130,92,.14), 0 8px 30px rgba(232,130,92,.38); }
+}
+.miss-card {
+  animation:
+    miss-card-in 520ms cubic-bezier(.22,1,.36,1) both,
+    miss-card-glow 1500ms ease-in-out 520ms 2;
+}
+
+/* Зүрхний цохилт — гурав цохиод тайвширна */
+@keyframes miss-beat {
+  from, to { transform: scale(1); }
+  30%      { transform: scale(1.28); }
+  55%      { transform: scale(1.05); }
+}
+.miss-beat { animation: miss-beat 780ms cubic-bezier(.22,1,.36,1) 3 both; }
+
 @media (prefers-reduced-motion: reduce) {
   /* Хөдөлгөөн багасгасан үед нисэхгүй, зөвхөн бүдгэрч харагдана */
   @keyframes miss-heart-rise {
@@ -32,4 +56,6 @@ input, textarea, select { font-size: 16px !important; }
     15%  { opacity: 1; }
     to   { opacity: 0; }
   }
+  /* Карт нь томрох, гэрэлтэх, цохилохгүй — зүгээр л байрандаа харагдана */
+  .miss-card, .miss-beat { animation: none; }
 }

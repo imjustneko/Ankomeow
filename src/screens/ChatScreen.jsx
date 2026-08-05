@@ -315,6 +315,9 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
           messages.map((m) => {
             const mine = m.sender === accountKey;
             const draw = m.type === "drawing";
+            /* Зурсан зураг ба "санаж байна" хоёр бөмбөлөггүй хөвнө —
+               өөрсдийн бүрхүүлээ зурдаг тул давхар хүрээ илүүц. */
+            const bare = (draw || m.type === "miss") && !m.replyTo;
             const media = m.type === "image" || draw || m.type === "location" || (m.type === "reaction" && m.gifUrl);
             const seen = mine && m.createdAt && partnerSeenAt && m.createdAt.toMillis() <= partnerSeenAt.toMillis();
             const myReaction = m.reactions?.[accountKey];
@@ -332,8 +335,7 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
                   onClick={() => setReactingTo((id) => (id === m.id ? null : m.id))}
                   className={`max-w-[75%] rounded-[18px] text-[13px] font-semibold cursor-pointer ${media && !m.replyTo ? "p-1.5" : "px-3.5 py-2.5"}`}
                   style={{
-                    ...(draw && !m.replyTo
-                      /* Зурсан зураг нь тунгалаг sticker — бөмбөлөггүй хөвнө */
+                    ...(bare
                       ? { background: "transparent", border: "none", padding: 0 }
                       : {
                         background: mine ? C.lilacDeep : C.card, color: mine ? "#fff" : C.ink,

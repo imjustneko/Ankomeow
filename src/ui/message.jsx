@@ -156,28 +156,36 @@ export function VoiceBubble({ m, mine }) {
 }
 
 /* Бөмбөлөгний дотоод агуулга — чат болон хадгалсан чат хоёулаа ашиглана */
-/* "Санаж байна" зурвас — тоо нь хэдэн зүрх зурахыг заана.
-   Таваас олбол бүгдийг зурахгүй: дүүрсэн эгнээ уншигдахаа больдог тул
-   таван зүрх дээр тоог нь бичнэ. */
+/* "Санаж байна" зурвас — энгийн бөмбөлөг биш, өөрийн гэрэлтсэн карт.
+
+   Тоо нь хэдэн зүрх зурахыг заана. Таваас олбол бүгдийг зурахгүй: дүүрсэн
+   эгнээ уншигдахаа больдог тул таван зүрх дээр тоог нь бичнэ.
+
+   Зүрх нь гурав л цохилно — төгсгөлгүй давтвал чат уруу гүйлгэх бүрд
+   анхаарал сарниулах болно. */
 const MISS_MAX_HEARTS = 5;
 
-function MissBubble({ count, mine }) {
+function MissBubble({ count }) {
   const n = Math.max(1, Math.floor(Number(count) || 1));
   const hearts = Math.min(n, MISS_MAX_HEARTS);
-  const tint = mine ? "#fff" : C.peachDeep;
 
   return (
-    <div className="flex flex-col gap-1.5 py-0.5">
-      <div className="flex items-center gap-0.5">
+    <div className="miss-card relative flex flex-col items-center gap-1.5 px-5 py-3.5 rounded-[22px]"
+      style={{
+        background: `radial-gradient(130% 110% at 50% 10%, rgba(245,175,142,.34) 0%, rgba(245,175,142,0) 68%), ${C.card}`,
+        border: `1.5px solid rgba(232,130,92,.42)`,
+        boxShadow: "0 0 0 5px rgba(232,130,92,.07), 0 8px 22px rgba(232,130,92,.20)",
+      }}>
+      <div className="flex items-end gap-0.5">
         {Array.from({ length: hearts }, (_, i) => (
-          <Heart key={i} size={20 - i * 1.5} strokeWidth={2.2} fill="currentColor"
-            style={{ color: tint, opacity: 1 - i * 0.12 }} />
+          <Heart key={i} className="miss-beat" size={26 - i * 2.5} strokeWidth={2} fill="currentColor"
+            style={{ color: C.peachDeep, opacity: 1 - i * 0.14, animationDelay: `${i * 90}ms` }} />
         ))}
         {n > MISS_MAX_HEARTS && (
-          <span className="text-[13px] font-extrabold ml-1" style={{ color: tint }}>×{n}</span>
+          <span className="text-[14px] font-extrabold ml-1.5" style={{ color: C.peachDeep }}>×{n}</span>
         )}
       </div>
-      <span className="text-[13px] font-extrabold" style={{ color: mine ? "#fff" : C.ink }}>
+      <span className="text-[13px] font-extrabold whitespace-nowrap" style={{ color: C.ink }}>
         {n > 1 ? `${n} удаа саналаа` : "Чамайг саналаа"}
       </span>
     </div>
@@ -199,7 +207,7 @@ export function MessageBody({ m, mine }) {
       )}
       {m.type === "reaction" && !m.gifUrl && <span className="italic">*{m.label}*</span>}
       {m.type === "location" && <MapView lat={m.lat} lng={m.lng} />}
-      {m.type === "miss" && <MissBubble count={m.count} mine={mine} />}
+      {m.type === "miss" && <MissBubble count={m.count} />}
     </>
   );
 }
