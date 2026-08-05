@@ -42,6 +42,30 @@ export function buzzMessage(name, count) {
   return count > 1 ? `${name} чамайг ${count} удаа товшлоо 💕` : `${name} чамайг товшлоо 💕`;
 }
 
+/* "Санаж байна" товчны текст. Товшилттой нэг сувгаар явдаг тул баримт дээрх
+   kind талбараар л ялгагдана. */
+export function missMessage(name, count) {
+  return count > 1 ? `${name} чамайг ${count} удаа саналаа 💗` : `${name} чамайг саналаа 💗`;
+}
+
+/* Аль сувгийн текстийг сонгох вэ. Танихгүй утга ирвэл товшилт гэж үзнэ —
+   хуучин баримтуудад kind огт байхгүй. */
+export function pokeMessage(kind, name, count) {
+  return kind === "miss" ? missMessage(name, count) : buzzMessage(name, count);
+}
+
+/* Нэг удаа дарж байхад илгээх дээд тоо. Хуруу гацсан, эсвэл халаасанд
+   дарагдсан ч хамтрагч руу зуу зуун зүрх явахгүй. */
+export const MISS_MAX_BURST = 30;
+
+/* Дарж байх хугацааг тоо болгоно — эхний зүрх шууд, дараа нь алхам тутам. */
+export const MISS_TICK_MS = 180;
+
+export function missCount(heldMs, tickMs = MISS_TICK_MS, max = MISS_MAX_BURST) {
+  if (!Number.isFinite(heldMs) || heldMs < 0) return 1;
+  return Math.min(max, 1 + Math.floor(heldMs / tickMs));
+}
+
 /* Хүлээн авах талын шийдвэрийн логик: чичрэх үү, мэдэгдэл харуулах уу, юу ч
    хийхгүй юу. Firebase, DOM-оос ангид байлгахын тулд `canVibrate`,
    `visible`-ийг гаднаас plain boolean хэлбэрээр авна.

@@ -16,3 +16,20 @@
    text-[15px] мэтийн класс нь элементийн сонгогчоос давуу жинтэй тул !important
    шаардлагатай — энэ бол загварын сонголт биш, платформын хатуу хязгаар. */
 input, textarea, select { font-size: 16px !important; }
+
+/* "Санаж байна" товчны зүрхнүүд — дээшээ хөвж бүдгэрнэ */
+@keyframes miss-heart-rise {
+  from { opacity: 0; translate: 0 0; }
+  15%  { opacity: 1; }
+  to   { opacity: 0; translate: 0 -76px; }
+}
+.miss-heart { animation: miss-heart-rise 900ms cubic-bezier(.22,1,.36,1) forwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* Хөдөлгөөн багасгасан үед нисэхгүй, зөвхөн бүдгэрч харагдана */
+  @keyframes miss-heart-rise {
+    from { opacity: 0; }
+    15%  { opacity: 1; }
+    to   { opacity: 0; }
+  }
+}

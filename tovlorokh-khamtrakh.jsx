@@ -21,6 +21,7 @@ import { ChatScreen } from "./src/screens/ChatScreen.jsx";
 import { DrawingView, DrawPad } from "./src/ui/drawing.jsx";
 import { SongChip } from "./src/ui/song.jsx";
 import { StoryRow } from "./src/ui/story.jsx";
+import { MissButton } from "./src/ui/miss.jsx";
 import {
   IMG, LOGO, IC_PROFILE, IC_TIME, IC_GIF, IC_HOME, IC_NOTE,
   BG_MAIN, GRAIN, WELCOME_HERO, NAV_HOME, NAV_WATER, NAV_CHAT,
@@ -52,7 +53,7 @@ import { CHEER_TEXT, goalsMet, hasUnseen, isOnline, pendingCheers } from "./src/
 import { MONTHS, WEEKDAYS, monthKey, monthGrid, addMonths, eventsOn, upcoming, isDue } from "./src/lib/calendar.js";
 import { distanceM, prettyDistance, metersPerPx, placeAt, geofenceEvent, DEFAULT_RADIUS } from "./src/lib/geo.js";
 import { dayNumber, nextMilestone, nextBirthday, streakCount, bothDoneDays, leftText, isValidDay } from "./src/lib/couple.js";
-import { vibrationPattern, canVibrate, buzzMessage, shouldBuzz } from "./src/chibi/buzz.js";
+import { vibrationPattern, canVibrate, missMessage, pokeMessage, shouldBuzz } from "./src/chibi/buzz.js";
 
 
 /* ── хэрэглэгчийн зурган эх сурвалж (лого болон section icon-ууд) ──
@@ -470,7 +471,7 @@ function ToolGrid({ go }) {
   );
 }
 
-function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justReset, avatar, profileName, screenApps, appMin, partner, partnerName, partnerStatus, partnerSong, partnerUnseen, partnerOnline, myStatus, mySong, coupleInfo, day, streak, nextEvent, accountKey, partnerKey, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
+function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justReset, avatar, profileName, screenApps, appMin, partner, partnerName, partnerStatus, partnerSong, partnerUnseen, partnerOnline, onMiss, myStatus, mySong, coupleInfo, day, streak, nextEvent, accountKey, partnerKey, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
   const now = new Date();
   const greet = (clock.h < 11 ? "Өглөөний мэнд" : clock.h < 18 ? "Өдрийн мэнд" : "Оройн мэнд") + (profileName ? `, ${profileName}` : "");
   const left = 86400 - (clock.h * 3600 + clock.m * 60 + clock.s);
@@ -525,6 +526,10 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
           )}
           <DayGlance ml={partner.ml} goal={partner.goal} items={partner.items}
             screenApps={partner.screenApps} appMin={partner.appMin} />
+          {/* Карт өөрөө дардаг тул товчны дарагдалт дээш нэвчихгүй байх ёстой */}
+          <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+            <MissButton onSend={onMiss} />
+          </div>
         </Card>
       ) : partnerName ? (
         /* Хамтрагч хараахан нэвтрээгүй бол чимээгүй өнгөрөхгүй — шалтгааныг хэлнэ */
@@ -1081,6 +1086,22 @@ export default function App() {
     });
   }, [accountKey, partnerKey]);
 
+  /* "Санаж байна" — товшилттой нэг сувгаар явна, зөвхөн kind-ээр ялгагдана.
+     Суллахад нэг л бичилт: барьсан хугацаанаас гарсан тоог increment хийнэ. */
+  const sendMiss = (n) => {
+    if (!partnerKey || !accountKey) return;
+    setDoc(doc(db, "rooms", CHAT_ROOM, "pokes", partnerKey), {
+      from: accountKey, kind: "miss", total: increment(n), at: serverTimestamp(),
+    }, { merge: true }).catch(() => {});
+    notifyPartner(auth, {
+      to: partnerKey,
+      title: "Ankomeow",
+      body: missMessage(ACCOUNTS[accountKey]?.name || "Хамтрагч", n),
+      tag: `miss-${Date.now()}`,
+      tab: "home",
+    });
+  };
+
   /* Хамгийн сүүлийн зурвасыг л сонсоно — нэг баримт тул хөнгөн. */
   useEffect(() => {
     if (!accountKey) return;
@@ -1196,7 +1217,7 @@ export default function App() {
         const name = partnerKey ? ACCOUNTS[partnerKey]?.name : "Хамтрагч";
         navigator.serviceWorker?.ready
           .then((reg) => reg.showNotification("Ankomeow", {
-            body: buzzMessage(name, delta),
+            body: pokeMessage(data?.kind, name, delta),
             icon: "./icon-192.png",
             tag: `poke-${total}`,
           }))
@@ -1489,7 +1510,7 @@ export default function App() {
                 </div>
               )}
               <div key={tab} className={`${navDir === "back" ? "scr-back" : "scr-in"} ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
-                {tab === "home" && <HomeScreen go={go} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} partnerStatus={partnerStatus} partnerSong={partnerSong} partnerUnseen={partnerUnseen} partnerOnline={partnerOnline} myStatus={myStatus} mySong={mySong} coupleInfo={coupleInfo} day={day} streak={streak} nextEvent={nextEvent} accountKey={accountKey} partnerKey={partnerKey} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} chatUnread={chatUnread} />}
+                {tab === "home" && <HomeScreen go={go} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} partnerStatus={partnerStatus} partnerSong={partnerSong} partnerUnseen={partnerUnseen} partnerOnline={partnerOnline} onMiss={sendMiss} myStatus={myStatus} mySong={mySong} coupleInfo={coupleInfo} day={day} streak={streak} nextEvent={nextEvent} accountKey={accountKey} partnerKey={partnerKey} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} chatUnread={chatUnread} />}
                 {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "list" && <ListScreen items={items} setItems={setItems} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "screen" && <ScreenTimeScreen {...{ screenApps, screenHistory, appMin }} partner={partnerStats} onBack={() => go("home")} />}

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { vibrationPattern, pokeDelta, canVibrate, buzzMessage, shouldBuzz, MAX_BUZZ_PULSES } from "./buzz.js";
+import { MAX_BUZZ_PULSES, vibrationPattern, pokeDelta, canVibrate, buzzMessage, shouldBuzz, missMessage, pokeMessage, missCount, MISS_MAX_BURST } from "./buzz.js";
 
 describe("vibrationPattern", () => {
   it("нэг товшилтод нэг богино цохилт", () => {
@@ -192,5 +192,50 @@ describe("shouldBuzz", () => {
       visible: true,
     });
     expect(r).toEqual({ action: "vibrate", delta: 1, nextBaselineReady: true });
+  });
+});
+
+describe("missMessage", () => {
+  it("нэг удаа санасныг ганц тоолуургүй хэлнэ", () => {
+    expect(missMessage("Neko", 1)).toBe("Neko чамайг саналаа 💗");
+  });
+
+  it("олон удаа санасныг тоогоор нь хэлнэ", () => {
+    expect(missMessage("Neko", 7)).toBe("Neko чамайг 7 удаа саналаа 💗");
+  });
+});
+
+describe("pokeMessage", () => {
+  it("miss сувгийг таньж зөв текст сонгоно", () => {
+    expect(pokeMessage("miss", "Neko", 2)).toContain("саналаа");
+  });
+
+  it("товшилтын сувагт товшлоо гэж хэлнэ", () => {
+    expect(pokeMessage("chibi", "Neko", 2)).toContain("товшлоо");
+  });
+
+  it("kind байхгүй хуучин баримтыг товшилт гэж үзнэ", () => {
+    expect(pokeMessage(undefined, "Neko", 1)).toContain("товшлоо");
+  });
+});
+
+describe("missCount", () => {
+  it("шууд тавихад нэг удаа", () => {
+    expect(missCount(0)).toBe(1);
+    expect(missCount(179)).toBe(1);
+  });
+
+  it("алхам тутам нэгээр нэмэгдэнэ", () => {
+    expect(missCount(180)).toBe(2);
+    expect(missCount(540)).toBe(4);
+  });
+
+  it("дээд хязгаараас хэтрэхгүй — хуруу гацсан ч зуу зуун зүрх явахгүй", () => {
+    expect(missCount(60_000)).toBe(MISS_MAX_BURST);
+  });
+
+  it("утгагүй хугацаанд нэг гэж үзнэ", () => {
+    expect(missCount(NaN)).toBe(1);
+    expect(missCount(-5)).toBe(1);
   });
 });
