@@ -59,9 +59,9 @@ export function MissButton({ onSend, disabled }) {
       {/* Нисэх зүрхнүүд — товчны дээгүүр, дарагдалтыг залгихгүй */}
       <div className="absolute inset-x-0 bottom-full h-24 pointer-events-none overflow-hidden">
         {hearts.map((h) => (
-          <span key={h.id} className="absolute left-1/2 bottom-0 miss-heart"
-            style={{ transform: `translateX(${h.x}px) scale(${h.s})`, color: C.peachDeep }}>
-            <Heart size={20} strokeWidth={2.4} fill="currentColor" />
+          <span key={h.id} className="absolute left-1/2 bottom-0 miss-heart" role="img" aria-label="зүрх"
+            style={{ transform: `translateX(${h.x}px) scale(${h.s})`, fontSize: 20, lineHeight: 1 }}>
+            💖
           </span>
         ))}
       </div>

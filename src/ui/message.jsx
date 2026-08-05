@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { addDoc, getDoc, serverTimestamp } from "firebase/firestore";
-import { Heart, Image as ImageIcon, MapPin, Pause, Play } from "lucide-react";
+import { Image as ImageIcon, MapPin, Pause, Play } from "lucide-react";
 import { C } from "../lib/theme.js";
 import { blobsCol, blobDoc } from "../lib/firebase.js";
 import { DrawingView } from "./drawing.jsx";
@@ -178,8 +178,10 @@ function MissBubble({ count }) {
       }}>
       <div className="flex items-end gap-0.5">
         {Array.from({ length: hearts }, (_, i) => (
-          <Heart key={i} className="miss-beat" size={26 - i * 2.5} strokeWidth={2} fill="currentColor"
-            style={{ color: C.peachDeep, opacity: 1 - i * 0.14, animationDelay: `${i * 90}ms` }} />
+          <span key={i} className="miss-beat" role="img" aria-label="зүрх"
+            style={{ fontSize: 26 - i * 2.5, lineHeight: 1, opacity: 1 - i * 0.14, animationDelay: `${i * 90}ms` }}>
+            💖
+          </span>
         ))}
         {n > MISS_MAX_HEARTS && (
           <span className="text-[14px] font-extrabold ml-1.5" style={{ color: C.peachDeep }}>×{n}</span>
