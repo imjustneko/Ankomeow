@@ -2,13 +2,13 @@
 
    Firestore руу нэг дарах бүрд биш, СУЛЛАХАД НЭГ Л УДАА бичнэ: барьсан
    хугацаанаас тоог бодоод increment(n) хийнэ. Ингэснээр 5 секунд барихад
-   30 бичилт биш, ганц бичилт болно. Хүлээн авагч талын чичиргээ, мэдэгдэл
+   олон бичилт биш, ганц бичилт болно. Хүлээн авагч талын чичиргээ, мэдэгдэл
    аль хэдийн олон тоог зөв боловсруулдаг. */
 
 import { useEffect, useRef, useState } from "react";
 import { Heart } from "lucide-react";
 import { C } from "../lib/theme.js";
-import { MISS_TICK_MS, MISS_MAX_BURST, missCount } from "../chibi/buzz.js";
+import { MISS_TICK_MS, missCount } from "../chibi/buzz.js";
 
 export function MissButton({ onSend, disabled }) {
   const [count, setCount] = useState(0);   /* 0 = дарж байгаагүй */
@@ -40,9 +40,7 @@ export function MissButton({ onSend, disabled }) {
     startRef.current = Date.now();
     bump(1);
     timerRef.current = setInterval(() => {
-      const n = missCount(Date.now() - startRef.current);
-      if (n >= MISS_MAX_BURST) stopTimer();
-      bump(n);
+      bump(missCount(Date.now() - startRef.current));
     }, MISS_TICK_MS);
   };
 

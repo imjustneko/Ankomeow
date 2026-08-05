@@ -54,16 +54,14 @@ export function pokeMessage(kind, name, count) {
   return kind === "miss" ? missMessage(name, count) : buzzMessage(name, count);
 }
 
-/* Нэг удаа дарж байхад илгээх дээд тоо. Хуруу гацсан, эсвэл халаасанд
-   дарагдсан ч хамтрагч руу зуу зуун зүрх явахгүй. */
-export const MISS_MAX_BURST = 30;
-
-/* Дарж байх хугацааг тоо болгоно — эхний зүрх шууд, дараа нь алхам тутам. */
+/* Дарж байх хугацааг тоо болгоно — эхний зүрх шууд, дараа нь алхам тутам.
+   Дээд хязгааргүй: удаан барих тусам тоо өснө. Firestore руу суллах үед
+   ганц increment л явдаг тул урт барихад ч зардал нэмэгдэхгүй. */
 export const MISS_TICK_MS = 180;
 
-export function missCount(heldMs, tickMs = MISS_TICK_MS, max = MISS_MAX_BURST) {
+export function missCount(heldMs, tickMs = MISS_TICK_MS) {
   if (!Number.isFinite(heldMs) || heldMs < 0) return 1;
-  return Math.min(max, 1 + Math.floor(heldMs / tickMs));
+  return 1 + Math.floor(heldMs / tickMs);
 }
 
 /* Хүлээн авах талын шийдвэрийн логик: чичрэх үү, мэдэгдэл харуулах уу, юу ч

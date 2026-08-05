@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { MAX_BUZZ_PULSES, vibrationPattern, pokeDelta, canVibrate, buzzMessage, shouldBuzz, missMessage, pokeMessage, missCount, MISS_MAX_BURST } from "./buzz.js";
+import { MAX_BUZZ_PULSES, vibrationPattern, pokeDelta, canVibrate, buzzMessage, shouldBuzz, missMessage, pokeMessage, missCount } from "./buzz.js";
 
 describe("vibrationPattern", () => {
   it("нэг товшилтод нэг богино цохилт", () => {
@@ -230,8 +230,8 @@ describe("missCount", () => {
     expect(missCount(540)).toBe(4);
   });
 
-  it("дээд хязгаараас хэтрэхгүй — хуруу гацсан ч зуу зуун зүрх явахгүй", () => {
-    expect(missCount(60_000)).toBe(MISS_MAX_BURST);
+  it("дээд хязгааргүй — удаан барих тусам тоо өснө", () => {
+    expect(missCount(60_000)).toBe(334);
   });
 
   it("утгагүй хугацаанд нэг гэж үзнэ", () => {
