@@ -16,12 +16,14 @@ import { ScreenTimeScreen } from "./src/screens/ScreenTimeScreen.jsx";
 import { ListScreen } from "./src/screens/ListScreen.jsx";
 import { WaterScreen, Glass } from "./src/screens/WaterScreen.jsx";
 import { PartnerScreen } from "./src/screens/PartnerScreen.jsx";
-import { ProfileScreen, StatusCard, CoupleDatesCard, ChangePasswordCard } from "./src/screens/ProfileScreen.jsx";
+import { ProfileScreen, EditProfileScreen, SettingsScreen } from "./src/screens/ProfileScreen.jsx";
 import { ChatScreen } from "./src/screens/ChatScreen.jsx";
 import { DrawingView, DrawPad } from "./src/ui/drawing.jsx";
+import { SongChip } from "./src/ui/song.jsx";
+import { StoryRow } from "./src/ui/story.jsx";
 import {
   IMG, LOGO, IC_PROFILE, IC_WATER, IC_TIME, IC_GIF, IC_CAT, IC_HOME, AVATARS,
-  BG_MAIN, GRAIN, WELCOME_HERO, NAV_HOME, NAV_WATER, NAV_LIST, NAV_TIME, NAV_GIF, NAV_CHAT,
+  BG_MAIN, GRAIN, WELCOME_HERO, NAV_HOME, NAV_WATER, NAV_CHAT,
   CAR_LIST, CAR_WATER, CAR_SCREEN, CAR_GIF,
   LOAD_0, LOAD_25, LOAD_50, LOAD_75, LOAD_90, LOAD_100, LOAD_ALMOST, LOAD_DONE, LOAD_FINISH,
   IC_DATES, IC_CALENDAR, IC_QUESTION, IC_WISH, IC_MAP, IC_CHAT, IC_LOCATION,
@@ -508,7 +510,30 @@ function LoginScreen() {
 }
 
 /* ── Нүүр ── */
-function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justReset, avatar, profileName, screenApps, appMin, partner, partnerName, partnerStatus, coupleInfo, day, streak, nextEvent, accountKey, partnerKey, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
+/* Хамтрагчийн өнөөдрийн гурван үзүүлэлт — нэг хараад ойлгохуйц богино хэлбэр */
+function PartnerGlance({ partner }) {
+  const pItems = partner?.items || [];
+  const done = pItems.filter((i) => i.done).length;
+  const st = (partner?.screenApps || []).reduce((s, a) => s + a.min, 0) + (partner?.appMin || 0);
+  const cols = [
+    { label: "Ус", text: `${partner?.ml ?? 0} мл`, value: partner?.ml ?? 0, max: partner?.goal || 1, color: C.waterDeep },
+    { label: "Жагсаалт", text: `${done}/${pItems.length}`, value: done, max: Math.max(pItems.length, 1), color: C.sageDeep },
+    { label: "Дэлгэц", text: `${Math.floor(st / 60)}ц ${st % 60}м`, value: st, max: 240, color: C.peachDeep },
+  ];
+  return (
+    <div className="grid grid-cols-3 gap-2.5">
+      {cols.map((c) => (
+        <div key={c.label}>
+          <div className="text-[10.5px] font-bold mb-0.5" style={{ color: c.color }}>{c.label}</div>
+          <div className="text-[12px] font-extrabold mb-1 truncate" style={{ color: C.ink }}>{c.text}</div>
+          <Bar value={c.value} max={c.max} color={c.color} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justReset, avatar, profileName, screenApps, appMin, partner, partnerName, partnerStatus, partnerSong, myStatus, mySong, coupleInfo, day, streak, nextEvent, accountKey, partnerKey, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
   const now = new Date();
   const greet = (clock.h < 11 ? "Өглөөний мэнд" : clock.h < 18 ? "Өдрийн мэнд" : "Оройн мэнд") + (profileName ? `, ${profileName}` : "");
   const done = items.filter((i) => i.done).length;
@@ -533,6 +558,44 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
             style={{ border: `1.5px solid ${C.line2}` }} />
         </button>
       </div>
+
+      {/* Хамтрагчийг хамгийн түрүүнд — скролл хийхээс өмнө нүдэнд өртөнө.
+          mt-7 нь дээрх наалдмал толгойн сөрөг захаас үүсэх давхцлыг нөхнө. */}
+      <StoryRow className="mt-7 mb-4"
+        me={{ avatar, status: myStatus, song: mySong }}
+        partner={{
+          avatar: partner?.avatar, name: partnerName,
+          status: partnerStatus, song: partnerSong, offline: !partner,
+        }}
+        onMe={() => go("editprofile")}
+        onPartner={() => partner && go("partner")} />
+
+      {/* Хамтрагчийн өнөөдрийн явц — story мөрийн шууд доор, скроллгүйгээр.
+          Дэлгэрэнгүйг нь Хамтрагч дэлгэц дээрээс. */}
+      {partner ? (
+        <Card tint="#FFFAF0" className="mb-4" onClick={() => go("partner")}>
+          <div className="flex items-center gap-2 mb-2">
+            <div className="text-[13px] font-extrabold min-w-0 flex-1 truncate" style={{ color: C.ink }}>
+              {partner.name}-ийн өнөөдөр
+            </div>
+            <span className="text-[11.5px] font-bold shrink-0" style={{ color: C.peachDeep }}>Дэлгэрэнгүй →</span>
+          </div>
+          {partnerStatus && (
+            <div className="text-[11.5px] font-bold mb-2 leading-snug" style={{ color: C.inkSoft }}>{partnerStatus}</div>
+          )}
+          {/* Сонсож буй дуу — тоглуулах товч картын дарагдалтыг залгихгүй */}
+          {partnerSong?.title && (
+            <div className="mb-2.5"><SongChip song={partnerSong} compact /></div>
+          )}
+          <PartnerGlance partner={partner} />
+        </Card>
+      ) : partnerName ? (
+        /* Хамтрагч хараахан нэвтрээгүй бол чимээгүй өнгөрөхгүй — шалтгааныг хэлнэ */
+        <Card tint="#FFFAF0" className="mb-4">
+          <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>{partnerName}</div>
+          <div className="text-[11.5px] font-bold mt-0.5" style={{ color: C.inkSoft }}>Хараахан нэвтрээгүй байна</div>
+        </Card>
+      ) : null}
 
       <img src={WELCOME_HERO} alt="Тавтай морил" className="w-full rounded-[22px] mb-4 object-cover"
         style={{ border: `1.5px solid ${C.line2}` }} />
@@ -591,39 +654,18 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
         </Card>
       </div>
 
-      {(partnerName || updateAvailable) && (
-        <div className="flex gap-3 mb-3">
-          {partner ? (
-            <Card tint="#FFFAF0" className="flex-1" onClick={() => go("partner")}>
-              <img src={partner.avatar || IC_PROFILE} alt="" className="w-12 h-12 rounded-2xl object-cover mb-2"
-                style={{ border: `1.5px solid ${C.line}` }} />
-              <div className="text-[13.5px] font-extrabold mb-1.5" style={{ color: C.ink }}>{partner.name}</div>
-              {partnerStatus && (
-                <div className="text-[11.5px] font-bold mb-1.5 leading-snug" style={{ color: C.ink }}>{partnerStatus}</div>
-              )}
-              <div className="text-[11.5px] font-bold" style={{ color: C.peachDeep }}>Явцыг харах →</div>
-            </Card>
-          ) : partnerName ? (
-            /* Хамтрагч хараахан нэвтрээгүй бол чимээгүй өнгөрөхгүй — шалтгааныг хэлнэ */
-            <Card tint="#FFFAF0" className="flex-1">
-              <img src={IC_PROFILE} alt="" className="w-12 h-12 rounded-2xl object-cover mb-2"
-                style={{ border: `1.5px solid ${C.line}`, opacity: 0.45 }} />
-              <div className="text-[13.5px] font-extrabold mb-1.5" style={{ color: C.ink }}>{partnerName}</div>
-              <div className="text-[11.5px] font-bold leading-snug" style={{ color: C.inkSoft }}>
-                Хараахан нэвтрээгүй байна
-              </div>
-            </Card>
-          ) : null}
-          {updateAvailable && (
-            <Card tint="#F5FBF3" className="flex-1" onClick={onApplyUpdate}>
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-2" style={{ background: C.sageDeep }}>
-                <RefreshCw size={20} strokeWidth={2.2} color="#fff" />
-              </div>
-              <div className="text-[13.5px] font-extrabold mb-1.5" style={{ color: C.ink }}>Шинэ хувилбар</div>
+      {updateAvailable && (
+        <Card tint="#F5FBF3" className="mb-3" onClick={onApplyUpdate}>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0" style={{ background: C.sageDeep }}>
+              <RefreshCw size={18} strokeWidth={2.2} color="#fff" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Шинэ хувилбар</div>
               <div className="text-[11.5px] font-bold" style={{ color: C.sageDeep }}>Шинэчлэх →</div>
-            </Card>
-          )}
-        </div>
+            </div>
+          </div>
+        </Card>
       )}
 
       <HomeCarousel />
@@ -718,10 +760,11 @@ export default function App() {
   const [tab, setTab] = useState("home");
   const [navDir, setNavDir] = useState("in");
 
-  /* Таб солихдоо шилжилтийн чиглэлийг мөн тогтооно:
-     нүүр рүү буцах нь "back", бусад нь "in". setTab-ын оронд үүнийг ашиглана. */
-  const go = (next) => {
-    setNavDir(next === "home" ? "back" : "in");
+  /* Таб солихдоо шилжилтийн чиглэлийг мөн тогтооно: нүүр рүү буцах нь "back",
+     бусад нь "in". Дэд дэлгэцээс эцэг рүүгээ буцахад dir-ийг шууд заана
+     (ж: Тохиргоо → Профайл). setTab-ын оронд үүнийг ашиглана. */
+  const go = (next, dir) => {
+    setNavDir(dir || (next === "home" ? "back" : "in"));
     setTab(next);
   };
 
@@ -757,6 +800,8 @@ export default function App() {
   const [savedIds, setSavedIds] = useState(() => new Set());
   const [myStatus, setMyStatus] = useState("");
   const [partnerStatus, setPartnerStatus] = useState("");
+  const [mySong, setMySong] = useState(null);
+  const [partnerSong, setPartnerSong] = useState(null);
   const [coupleInfo, setCoupleInfo] = useState(null);
   const [doneDays, setDoneDays] = useState([]);
   const [events, setEvents] = useState([]);
@@ -892,15 +937,22 @@ export default function App() {
     return onSnapshot(q, (s) => setDoneDays(s.docs.map((d) => d.data())), () => {});
   }, [user]);
 
+  /* Статус ба сонсож буй дуу нэг л баримт дээр сууна — нэг л сонсогч хангалттай */
   useEffect(() => {
-    if (!accountKey) { setMyStatus(""); return; }
-    const unsub = onSnapshot(profileDoc(accountKey), (s) => setMyStatus(s.data()?.status || ""), () => {});
+    if (!accountKey) { setMyStatus(""); setMySong(null); return; }
+    const unsub = onSnapshot(profileDoc(accountKey), (s) => {
+      setMyStatus(s.data()?.status || "");
+      setMySong(s.data()?.song || null);
+    }, () => {});
     return unsub;
   }, [accountKey]);
 
   useEffect(() => {
-    if (!partnerKey) { setPartnerStatus(""); return; }
-    const unsub = onSnapshot(profileDoc(partnerKey), (s) => setPartnerStatus(s.data()?.status || ""), () => {});
+    if (!partnerKey) { setPartnerStatus(""); setPartnerSong(null); return; }
+    const unsub = onSnapshot(profileDoc(partnerKey), (s) => {
+      setPartnerStatus(s.data()?.status || "");
+      setPartnerSong(s.data()?.song || null);
+    }, () => {});
     return unsub;
   }, [partnerKey]);
 
@@ -1322,14 +1374,19 @@ export default function App() {
     return () => clearInterval(id);
   }, [day]);
 
+  /* Доод бар — Instagram хэв: яг 5 таб, бичиггүй, зөвхөн икон. label нь дэлгэц
+     уншигчид зориулсан aria-label болж үлдэнэ. Сүүлчийнх нь профайлын аватар.
+
+     Дэлгэцийн цаг ба GIF энд байхгүй — Нүүрэн дээр өөрсдийн карттай тул
+     барыг ачаалахгүйгээр нэг товшилтоор хүрнэ. */
   const nav = [
-    { id: "home", icon: NAV_HOME, label: "Нүүр", c: C.ink, c2: C.inkSoft },
-    { id: "water", icon: NAV_WATER, label: "Ус", c: C.waterDeep, c2: C.water },
-    { id: "list", icon: NAV_LIST, label: "Жагсаалт", c: C.sageDeep, c2: C.sage },
-    { id: "screen", icon: NAV_TIME, label: "Дэлгэц", c: C.peachDeep, c2: C.peach },
-    { id: "gif", icon: NAV_GIF, label: "GIF", c: C.lilacDeep, c2: C.lilac },
-    /* Чат хамгийн их хэрэглэгддэг тул баруун захад — эрхий хуруунд ойр */
-    { id: "chat", icon: NAV_CHAT, label: "Чат", c: C.peachDeep, c2: C.peach },
+    { id: "home", icon: NAV_HOME, label: "Нүүр" },
+    { id: "water", icon: NAV_WATER, label: "Ус" },
+    /* Хамтрагч дунд слотод — эрхий хуруунд хамгийн ойр байрлал.
+       Түүний явцыг харах нь аппын гол зорилго тул хамгийн хялбар хүрнэ. */
+    { id: "partner", icon: partnerStats?.avatar || IC_PROFILE, label: "Хамтрагч", isAvatar: true },
+    { id: "chat", icon: NAV_CHAT, label: "Чат" },
+    { id: "profile", icon: avatar || IC_PROFILE, label: "Профайл", isAvatar: true },
   ];
 
   return (
@@ -1477,13 +1534,15 @@ export default function App() {
                 </div>
               )}
               <div key={tab} className={`${navDir === "back" ? "scr-back" : "scr-in"} ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
-                {tab === "home" && <HomeScreen go={go} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} partnerStatus={partnerStatus} coupleInfo={coupleInfo} day={day} streak={streak} nextEvent={nextEvent} accountKey={accountKey} partnerKey={partnerKey} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} chatUnread={chatUnread} />}
+                {tab === "home" && <HomeScreen go={go} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} partnerStatus={partnerStatus} partnerSong={partnerSong} myStatus={myStatus} mySong={mySong} coupleInfo={coupleInfo} day={day} streak={streak} nextEvent={nextEvent} accountKey={accountKey} partnerKey={partnerKey} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} chatUnread={chatUnread} />}
                 {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "list" && <ListScreen items={items} setItems={setItems} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "screen" && <ScreenTimeScreen {...{ screenApps, screenHistory, appMin }} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} partner={partnerStats} onBack={() => go("home")} />}
-                {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, setAvatar, profileName, chibiEnabled, setChibiEnabled }} gifCount={frames.length} savedCount={savedIds.size} onOpenSaved={() => go("saved")} accountKey={accountKey} myStatus={myStatus} coupleInfo={coupleInfo} themeMode={themeMode} setThemeMode={setThemeMode} onBack={() => go("home")} />}
-                {tab === "saved" && <SavedChatScreen accountKey={accountKey} onBack={() => go("profile")} />}
+                {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, profileName, day }} gifCount={frames.length} savedCount={savedIds.size} onOpenSaved={() => go("saved")} myStatus={myStatus} mySong={mySong} coupleInfo={coupleInfo} onEdit={() => go("editprofile")} onSettings={() => go("settings")} />}
+                {tab === "editprofile" && <EditProfileScreen avatar={avatar} setAvatar={setAvatar} accountKey={accountKey} myStatus={myStatus} mySong={mySong} coupleInfo={coupleInfo} onBack={() => go("profile", "back")} />}
+                {tab === "settings" && <SettingsScreen {...{ chibiEnabled, setChibiEnabled, themeMode, setThemeMode }} onBack={() => go("profile", "back")} />}
+                {tab === "saved" && <SavedChatScreen accountKey={accountKey} onBack={() => go("profile", "back")} />}
                 {tab === "cal" && <CalendarScreen accountKey={accountKey} partnerKey={partnerKey}
                   partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} profileName={profileName}
                   today={day} coupleInfo={coupleInfo} onBack={() => go("home")} />}
@@ -1495,24 +1554,33 @@ export default function App() {
                 {tab === "map" && <LiveMapScreen accountKey={accountKey} partnerKey={partnerKey} profileName={profileName}
                   partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} avatar={avatar} partnerAvatar={partnerStats?.avatar}
                   onBack={() => go("home")} />}
-                {tab === "partner" && <PartnerScreen partner={partnerStats} accountKey={accountKey} partnerKey={partnerKey} partnerStatus={partnerStatus} onBack={() => go("home")} />}
+                {tab === "partner" && <PartnerScreen partner={partnerStats} accountKey={accountKey} partnerKey={partnerKey} partnerStatus={partnerStatus} partnerSong={partnerSong} onBack={() => go("home")} />}
                 {tab === "chat" && <ChatScreen onBack={() => go("home")} profileName={profileName} accountKey={accountKey} partnerKey={partnerKey} savedIds={savedIds} onPartnerBubble={handlePartnerBubble} />}
               </div>
             </div>
 
             {tab !== "chat" && (
-              <nav className="safe-bottom flex justify-around items-center gap-0.5 py-2 px-2 mx-3 mb-4 rounded-full shrink-0"
-                style={{ background: C.card, border: `1.5px solid ${C.line}`, boxShadow: "0 10px 24px rgba(92,74,58,.14)" }}>
-                {nav.map(({ id, icon, label, c, c2 }) => {
-                  const on = tab === id;
+              /* Бүтэн өргөнөөр доод ирмэгт наалдана — safe-bottom-pad нь home
+                 indicator шугамыг зайгаар биш, дотоод хийцээр тойрно */
+              <nav className="safe-bottom-pad flex justify-around items-center pt-1.5 pb-1.5 px-1 shrink-0"
+                style={{ background: C.card, borderTop: `1px solid ${C.line}` }}>
+                {/* Профайлын дэд дэлгэц дээр ч аватар таб тодорхой хэвээр —
+                    Instagram дээр Тохиргоо руу орсон ч сүүлчийн таб идэвхтэй байдаг */}
+                {nav.map(({ id, icon, label, isAvatar }) => {
+                  const on = tab === id
+                    || (id === "profile" && (tab === "editprofile" || tab === "settings" || tab === "saved"));
                   return (
-                    <button key={id} onClick={() => go(id)}
-                      className="relative flex flex-col items-center justify-center gap-1 px-0.5 py-1.5 rounded-2xl min-h-[44px] min-w-0">
-                      <span className="w-9 h-9 rounded-2xl flex items-center justify-center overflow-hidden relative shrink-0"
+                    <button key={id} onClick={() => go(id)} aria-label={label}
+                      aria-current={on ? "page" : undefined}
+                      className="relative flex flex-col items-center justify-center gap-1 px-3 py-1 min-h-[44px] min-w-0">
+                      <span className={`flex items-center justify-center overflow-hidden shrink-0 ${isAvatar ? "w-8 h-8 rounded-full" : "w-9 h-9 rounded-xl"}`}
                         style={{
-                          background: on ? `linear-gradient(155deg, ${c2 || c} 0%, ${c} 100%)` : C.cardIn,
-                          boxShadow: on ? "0 3px 8px rgba(92,74,58,.22)" : "none",
-                          transition: "background 220ms ease, box-shadow 220ms ease",
+                          /* Идэвхгүй таб бүдгэрч, идэвхтэй нь бүрэн тод болно —
+                             зурсан иконуудын өнгийг хэвээр үлдээж ялгааг гаргана */
+                          opacity: on ? 1 : 0.42,
+                          filter: on ? "none" : "saturate(0.55)",
+                          border: isAvatar ? `2px solid ${on ? C.ink : "transparent"}` : "none",
+                          transition: "opacity 200ms ease, filter 200ms ease, border-color 200ms ease",
                         }}>
                         <img src={icon} alt="" className="w-full h-full object-cover" />
                       </span>
@@ -1520,12 +1588,16 @@ export default function App() {
                       {id === "chat" && chatUnread && (
                         <span className="absolute w-2.5 h-2.5 rounded-full"
                           style={{
-                            top: 2, right: 2,
+                            top: 0, right: 2,
                             background: C.peachDeep, border: `2px solid ${C.card}`,
                           }} />
                       )}
-                      <span className="text-[9.5px] font-extrabold leading-none whitespace-nowrap"
-                        style={{ color: on ? C.ink : C.inkSoft }}>{label}</span>
+                      {/* Идэвхтэй табын цэг — бичиггүй болсны оронд байрлалыг заана */}
+                      <span className="w-1 h-1 rounded-full"
+                        style={{
+                          background: on ? C.ink : "transparent",
+                          transition: "background 200ms ease",
+                        }} />
                     </button>
                   );
                 })}
