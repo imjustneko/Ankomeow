@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { addDoc, getDoc, serverTimestamp } from "firebase/firestore";
-import { Image as ImageIcon, MapPin, Pause, Play } from "lucide-react";
+import { Heart, Image as ImageIcon, MapPin, Pause, Play } from "lucide-react";
 import { C } from "../lib/theme.js";
 import { blobsCol, blobDoc } from "../lib/firebase.js";
 import { DrawingView } from "./drawing.jsx";
@@ -60,7 +60,7 @@ export function useBlob(id, inline) {
   return data;
 }
 
-export const SAVED_FIELDS = ["text", "label", "key", "gifUrl", "image", "blobId", "dur", "strokes", "lat", "lng"];
+export const SAVED_FIELDS = ["text", "label", "key", "gifUrl", "image", "blobId", "dur", "strokes", "lat", "lng", "count"];
 export const savedSnapshot = (m) => {
   const out = {
     type: m.type,
@@ -156,6 +156,34 @@ export function VoiceBubble({ m, mine }) {
 }
 
 /* Бөмбөлөгний дотоод агуулга — чат болон хадгалсан чат хоёулаа ашиглана */
+/* "Санаж байна" зурвас — тоо нь хэдэн зүрх зурахыг заана.
+   Таваас олбол бүгдийг зурахгүй: дүүрсэн эгнээ уншигдахаа больдог тул
+   таван зүрх дээр тоог нь бичнэ. */
+const MISS_MAX_HEARTS = 5;
+
+function MissBubble({ count, mine }) {
+  const n = Math.max(1, Math.floor(Number(count) || 1));
+  const hearts = Math.min(n, MISS_MAX_HEARTS);
+  const tint = mine ? "#fff" : C.peachDeep;
+
+  return (
+    <div className="flex flex-col gap-1.5 py-0.5">
+      <div className="flex items-center gap-0.5">
+        {Array.from({ length: hearts }, (_, i) => (
+          <Heart key={i} size={20 - i * 1.5} strokeWidth={2.2} fill="currentColor"
+            style={{ color: tint, opacity: 1 - i * 0.12 }} />
+        ))}
+        {n > MISS_MAX_HEARTS && (
+          <span className="text-[13px] font-extrabold ml-1" style={{ color: tint }}>×{n}</span>
+        )}
+      </div>
+      <span className="text-[13px] font-extrabold" style={{ color: mine ? "#fff" : C.ink }}>
+        {n > 1 ? `${n} удаа саналаа` : "Чамайг саналаа"}
+      </span>
+    </div>
+  );
+}
+
 export function MessageBody({ m, mine }) {
   return (
     <>
@@ -171,6 +199,7 @@ export function MessageBody({ m, mine }) {
       )}
       {m.type === "reaction" && !m.gifUrl && <span className="italic">*{m.label}*</span>}
       {m.type === "location" && <MapView lat={m.lat} lng={m.lng} />}
+      {m.type === "miss" && <MissBubble count={m.count} mine={mine} />}
     </>
   );
 }
@@ -184,6 +213,7 @@ export function messagePreview(payload) {
     case "drawing": return "🎨 Зураг зурлаа";
     case "voice": return "🎤 Дуут зурвас илгээлээ";
     case "location": return "📍 Байршлаа илгээлээ";
+    case "miss": return payload.count > 1 ? `💗 ${payload.count} удаа саналаа` : "💗 Чамайг саналаа";
     default: return "Шинэ зурвас";
   }
 }

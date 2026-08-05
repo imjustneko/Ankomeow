@@ -100,3 +100,19 @@ describe("хугацааны бичиглэл", () => {
     expect(durText(null)).toBe("0:00");
   });
 });
+
+describe("messagePreview — санаж байна", () => {
+  it("нэг удаа санасныг тоогүй хэлнэ", () => {
+    expect(messagePreview({ type: "miss", count: 1 })).toBe("💗 Чамайг саналаа");
+  });
+
+  it("олон удаа санасныг тоогоор нь хэлнэ", () => {
+    expect(messagePreview({ type: "miss", count: 12 })).toBe("💗 12 удаа саналаа");
+  });
+});
+
+describe("savedSnapshot — санаж байна", () => {
+  it("тоог хадгална, эс бөгөөс хадгалсан зурвас утгагүй болно", () => {
+    expect(savedSnapshot({ type: "miss", count: 7, sender: "neko" }).count).toBe(7);
+  });
+});

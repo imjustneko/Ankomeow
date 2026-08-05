@@ -53,7 +53,7 @@ import { CHEER_TEXT, goalsMet, hasUnseen, isOnline, pendingCheers } from "./src/
 import { MONTHS, WEEKDAYS, monthKey, monthGrid, addMonths, eventsOn, upcoming, isDue } from "./src/lib/calendar.js";
 import { distanceM, prettyDistance, metersPerPx, placeAt, geofenceEvent, DEFAULT_RADIUS } from "./src/lib/geo.js";
 import { dayNumber, nextMilestone, nextBirthday, streakCount, bothDoneDays, leftText, isValidDay } from "./src/lib/couple.js";
-import { vibrationPattern, canVibrate, missMessage, pokeMessage, shouldBuzz } from "./src/chibi/buzz.js";
+import { vibrationPattern, canVibrate, pokeMessage, shouldBuzz } from "./src/chibi/buzz.js";
 
 
 /* ── хэрэглэгчийн зурган эх сурвалж (лого болон section icon-ууд) ──
@@ -1090,15 +1090,25 @@ export default function App() {
      Суллахад нэг л бичилт: барьсан хугацаанаас гарсан тоог increment хийнэ. */
   const sendMiss = (n) => {
     if (!partnerKey || !accountKey) return;
+    const payload = { type: "miss", count: n };
+
+    /* Чатанд үлдэнэ — хожим эргэж хараад дурсах ул мөр. */
+    addDoc(messagesCol(), {
+      sender: accountKey, senderName: profileName, createdAt: serverTimestamp(), ...payload,
+    }).catch(() => {});
+
+    /* pokes нь зөвхөн чичиргээг зөөнө — мэдэгдлийг чатын push хариуцна,
+       эс бөгөөс хоёр мэдэгдэл давхар очно. */
     setDoc(doc(db, "rooms", CHAT_ROOM, "pokes", partnerKey), {
       from: accountKey, kind: "miss", total: increment(n), at: serverTimestamp(),
     }, { merge: true }).catch(() => {});
+
     notifyPartner(auth, {
       to: partnerKey,
-      title: "Ankomeow",
-      body: missMessage(ACCOUNTS[accountKey]?.name || "Хамтрагч", n),
-      tag: `miss-${Date.now()}`,
-      tab: "home",
+      title: profileName,
+      body: messagePreview(payload),
+      tag: "chat",
+      tab: "chat",
     });
   };
 
@@ -1209,6 +1219,10 @@ export default function App() {
         navigator.vibrate(vibrationPattern(delta));
         return;
       }
+
+      /* "Санаж байна"-гийн мэдэгдлийг чатын push аль хэдийн үзүүлсэн —
+         энд давхардуулбал нэг үйлдэлд хоёр мэдэгдэл гарна. */
+      if (action === "notify" && data?.kind === "miss") return;
 
       if (action === "notify") {
         /* iOS — Vibration API байхгүй, апп харагдаж байгаа тул зөвхөн энд л
