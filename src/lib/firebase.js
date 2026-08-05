@@ -66,6 +66,9 @@ export const wishDoc = (key, id) => doc(db, "rooms", CHAT_ROOM, "wishes", key, "
 export const liveDoc = (key) => doc(db, "rooms", CHAT_ROOM, "live", key);
 /* Статус — өөрийн мөр/эможи */
 export const profileDoc = (key) => doc(db, "rooms", CHAT_ROOM, "profiles", key);
+/* Профайлын зураг — эзэн нь нэмж, хос нь харна */
+export const postsCol = (key) => collection(db, "rooms", CHAT_ROOM, "posts", key, "items");
+export const postDoc = (key, id) => doc(db, "rooms", CHAT_ROOM, "posts", key, "items", id);
 /* Хадгалсан чат — зурвасын хуулбар өөрийн аккаунтын дор */
 export const savedItemsCol = (accountKey) => collection(db, "rooms", CHAT_ROOM, "saved", accountKey, "items");
 export const savedItemDoc = (accountKey, id) => doc(db, "rooms", CHAT_ROOM, "saved", accountKey, "items", id);

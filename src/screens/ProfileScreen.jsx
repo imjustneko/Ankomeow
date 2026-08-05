@@ -7,8 +7,9 @@ import { auth, coupleDoc, profileDoc } from "../lib/firebase.js";
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "firebase/auth";
 import { serverTimestamp, setDoc } from "firebase/firestore";
 import { dayNumber, isValidDay } from "../lib/couple.js";
-import { Check, LogOut, Menu, Moon, Music, Sun, Upload } from "lucide-react";
+import { Check, LogOut, Menu, Moon, Music, Plus, Sun, Upload } from "lucide-react";
 import { SongChip, SongPicker } from "../ui/song.jsx";
+import { PostComposer, PostGallery, usePosts } from "../ui/posts.jsx";
 import { AVATARS } from "../lib/assets.js";
 import { compressImage } from "../lib/image.js";
 
@@ -200,7 +201,9 @@ function Stat({ n, label, onClick }) {
    Дээд мөр: нэр + баруун талд ☰ тохиргоо. Дор нь аватар + гурван тоо, товч
    танилцуулга, "Профайл засах" мөр. Тохиргоо, засварын талбарууд өөрсдийн
    дэлгэцтэй болсон тул энэ дэлгэц зөвхөн харуулах үүрэгтэй. */
-export function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, profileName, savedCount, onOpenSaved, myStatus, mySong, coupleInfo, day, onEdit, onSettings }) {
+export function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, profileName, savedCount, onOpenSaved, accountKey, myStatus, mySong, coupleInfo, day, onEdit, onSettings }) {
+  const [composing, setComposing] = useState(false);
+  const posts = usePosts(accountKey);
   const done = items.filter((i) => i.done).length;
   const stTotal = screenApps.reduce((s, a) => s + a.min, 0) + appMin;
   const together = coupleInfo?.since && day ? dayNumber(coupleInfo.since, day) : null;
@@ -214,20 +217,27 @@ export function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, a
     <div>
       <div className="flex items-center justify-between gap-2 mb-5">
         <h1 className="text-[22px] font-extrabold leading-tight truncate" style={{ color: C.ink }}>{profileName}</h1>
-        <button onClick={onSettings} aria-label="Тохиргоо"
-          className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 active:scale-95"
-          style={{ color: C.ink, transition: "transform 150ms ease" }}>
-          <Menu size={22} strokeWidth={2.2} />
-        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          <button onClick={() => setComposing((v) => !v)} aria-label="Зураг нэмэх"
+            className="w-9 h-9 rounded-full flex items-center justify-center active:scale-95"
+            style={{ color: C.ink, transition: "transform 150ms ease" }}>
+            <Plus size={22} strokeWidth={2.4} />
+          </button>
+          <button onClick={onSettings} aria-label="Тохиргоо"
+            className="w-9 h-9 rounded-full flex items-center justify-center active:scale-95"
+            style={{ color: C.ink, transition: "transform 150ms ease" }}>
+            <Menu size={22} strokeWidth={2.2} />
+          </button>
+        </div>
       </div>
 
       <div className="flex items-center gap-4 mb-3">
         <img src={avatar} alt="" className="w-[84px] h-[84px] rounded-full object-cover shrink-0"
           style={{ border: `2px solid ${C.line2}` }} />
         <div className="flex-1 flex justify-around min-w-0">
+          <Stat n={posts.length} label="Зураг" />
           <Stat n={together ?? "—"} label="Хамт хоног" />
           <Stat n={savedCount} label="Хадгалсан" onClick={onOpenSaved} />
-          <Stat n={gifCount} label="GIF кадр" />
         </div>
       </div>
 
@@ -249,6 +259,11 @@ export function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, a
           Хадгалсан чат
         </button>
       </div>
+
+      {composing && <PostComposer accountKey={accountKey} onClose={() => setComposing(false)} />}
+
+      <PostGallery ownerKey={accountKey} canEdit
+        emptyText="Зураг байхгүй. Дээрх + товчоор нэмээрэй." />
 
       <div className="text-[13px] font-extrabold mb-2.5" style={{ color: C.ink }}>Өнөөдрийн явц</div>
       <div className="grid grid-cols-2 gap-3">

@@ -98,6 +98,14 @@ service cloud.firestore {
       allow write: if isCouple() && key == myKey();
     }
 
+    /* Профайлын зураг — хос нь харна, эзэн нь л нэмж, устгана.
+       Бүтэн хэмжээний зураг нь blobs дотор, энд зөвхөн жижиг хувилбар
+       болон blobId сууна. */
+    match /rooms/ankomeow-couple/posts/{key}/items/{itemId} {
+      allow read: if isCouple();
+      allow write: if isCouple() && key == myKey();
+    }
+
     /* Бодит цагийн байршил — хос нь уншина, эзэн нь л бичнэ */
     match /rooms/ankomeow-couple/live/{key} {
       allow read: if isCouple();

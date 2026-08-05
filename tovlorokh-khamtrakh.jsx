@@ -1384,7 +1384,7 @@ export default function App() {
                 {tab === "list" && <ListScreen items={items} setItems={setItems} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "screen" && <ScreenTimeScreen {...{ screenApps, screenHistory, appMin }} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "gif" && <GifScreen frames={frames} setFrames={setFrames} partner={partnerStats} onBack={() => go("home")} />}
-                {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, profileName, day }} gifCount={frames.length} savedCount={savedIds.size} onOpenSaved={() => go("saved")} myStatus={myStatus} mySong={mySong} coupleInfo={coupleInfo} onEdit={() => go("editprofile")} onSettings={() => go("settings")} />}
+                {tab === "profile" && <ProfileScreen {...{ ml, goal, items, screenApps, appMin, avatar, profileName, day }} gifCount={frames.length} savedCount={savedIds.size} onOpenSaved={() => go("saved")} accountKey={accountKey} myStatus={myStatus} mySong={mySong} coupleInfo={coupleInfo} onEdit={() => go("editprofile")} onSettings={() => go("settings")} />}
                 {tab === "editprofile" && <EditProfileScreen avatar={avatar} setAvatar={setAvatar} accountKey={accountKey} myStatus={myStatus} mySong={mySong} coupleInfo={coupleInfo} onBack={() => go("profile", "back")} />}
                 {tab === "settings" && <SettingsScreen {...{ chibiEnabled, setChibiEnabled, themeMode, setThemeMode }} onBack={() => go("profile", "back")} />}
                 {tab === "saved" && <SavedChatScreen accountKey={accountKey} onBack={() => go("profile", "back")} />}

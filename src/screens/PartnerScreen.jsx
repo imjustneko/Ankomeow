@@ -9,6 +9,7 @@ import { notifyPartner } from "../push.js";
 import { Check } from "lucide-react";
 import { IC_PROFILE } from "../lib/assets.js";
 import { SongChip } from "../ui/song.jsx";
+import { PostGallery } from "../ui/posts.jsx";
 
 /* ── Хамтрагчийн явц (зөвхөн харах) ── */
 export function PartnerScreen({ partner, accountKey, partnerKey, partnerStatus, partnerSong, onBack }) {
@@ -69,6 +70,9 @@ export function PartnerScreen({ partner, accountKey, partnerKey, partnerStatus, 
           <div className="text-[15px] font-extrabold" style={{ color: C.ink }}>{gifCount} кадр</div>
         </Card>
       </div>
+
+      <div className="text-[13px] font-extrabold mb-2.5" style={{ color: C.ink }}>Зураг</div>
+      <PostGallery ownerKey={partnerKey} emptyText="Хараахан зураг тавиагүй байна." />
 
       <div className="text-[13px] font-extrabold mb-2.5" style={{ color: C.ink }}>Жагсаалт</div>
       {items.length === 0 ? (
