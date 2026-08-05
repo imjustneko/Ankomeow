@@ -22,11 +22,10 @@ import { DrawingView, DrawPad } from "./src/ui/drawing.jsx";
 import { SongChip } from "./src/ui/song.jsx";
 import { StoryRow } from "./src/ui/story.jsx";
 import {
-  IMG, LOGO, IC_PROFILE, IC_WATER, IC_TIME, IC_GIF, IC_CAT, IC_HOME, AVATARS,
+  IMG, LOGO, IC_PROFILE, IC_TIME, IC_GIF, IC_HOME, IC_NOTE, AVATARS,
   BG_MAIN, GRAIN, WELCOME_HERO, NAV_HOME, NAV_WATER, NAV_CHAT,
-  CAR_LIST, CAR_WATER, CAR_SCREEN, CAR_GIF,
   LOAD_0, LOAD_25, LOAD_50, LOAD_75, LOAD_90, LOAD_100, LOAD_ALMOST, LOAD_DONE, LOAD_FINISH,
-  IC_DATES, IC_CALENDAR, IC_QUESTION, IC_WISH, IC_MAP, IC_CHAT, IC_LOCATION,
+  IC_DATES, IC_CALENDAR, IC_QUESTION, IC_WISH, IC_MAP, IC_LOCATION,
 } from "./src/lib/assets.js";
 import { TZ, ubDay, ubParts, pad, DAYS } from "./src/lib/time.js";
 import { compressImage, compressDataUrl } from "./src/lib/image.js";
@@ -285,99 +284,16 @@ function LoadingSequence({ paused = false }) {
   );
 }
 
-/* ── Нүүрний carousel ── */
-function carouselNearestIndex(root, refs) {
-  const rootRect = root.getBoundingClientRect();
-  const rootCenter = rootRect.left + rootRect.width / 2;
-  let best = 0, bestDist = Infinity;
-  refs.forEach((el, i) => {
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    const c = r.left + r.width / 2;
-    const d = Math.abs(c - rootCenter);
-    if (d < bestDist) { bestDist = d; best = i; }
-  });
-  return best;
-}
-
-function HomeCarousel() {
-  const base = [CAR_LIST, CAR_WATER, CAR_SCREEN, CAR_GIF];
-  const REPS = 3;
-  const slides = Array.from({ length: base.length * REPS }, (_, i) => base[i % base.length]);
-  const n = base.length;
-  const trackRef = useRef(null);
-  const slideRefs = useRef([]);
-  const pausedUntil = useRef(0);
-  const settleTimer = useRef(null);
-  const lastIndex = useRef(n);
-
-  const goTo = (i, smooth) => {
-    const el = slideRefs.current[i];
-    const root = trackRef.current;
-    if (!el || !root) return;
-    const target = el.offsetLeft - (root.clientWidth - el.clientWidth) / 2;
-    root.scrollTo({ left: target, behavior: smooth ? "smooth" : "auto" });
-  };
-
-  useEffect(() => { goTo(n, false); }, []);
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      if (Date.now() < pausedUntil.current) return;
-      const root = trackRef.current;
-      if (!root) return;
-      const next = carouselNearestIndex(root, slideRefs.current) + 1;
-      lastIndex.current = next;
-      goTo(next, true);
-    }, 2000);
-    return () => clearInterval(id);
-  }, []);
-
-  const onScroll = () => {
-    clearTimeout(settleTimer.current);
-    settleTimer.current = setTimeout(() => {
-      const root = trackRef.current;
-      if (!root) return;
-      let cur = carouselNearestIndex(root, slideRefs.current);
-      if (cur < lastIndex.current) {
-        goTo(lastIndex.current, false);
-        cur = lastIndex.current;
-      } else {
-        lastIndex.current = cur;
-      }
-      if (cur >= n * (REPS - 1)) {
-        goTo(cur - n, false);
-        lastIndex.current = cur - n;
-      } else if (cur < n) {
-        goTo(cur + n, false);
-        lastIndex.current = cur + n;
-      }
-    }, 120);
-  };
-
-  const pause = () => { pausedUntil.current = Date.now() + 4000; };
-
-  return (
-    <div ref={trackRef} onScroll={onScroll} onTouchStart={pause} onPointerDown={pause} onWheel={pause}
-      className="hcarousel flex gap-3 overflow-x-auto mb-4"
-      style={{ scrollSnapType: "x mandatory", scrollPadding: "0 31%" }}>
-      {slides.map((src, i) => (
-        <img key={i} ref={(el) => (slideRefs.current[i] = el)} src={src} alt=""
-          className="shrink-0 rounded-[22px] object-cover"
-          style={{ width: "38%", aspectRatio: "143/602", scrollSnapAlign: "center" }} />
-      ))}
-    </div>
-  );
-}
-
-
 /* ── Статус ── */
 
 
-/* Нүүр дэлгэцийн "Бид хамт" карт — өдрийн тоо, ойрын ой, streak */
-function TogetherCard({ info, today, streak, partnerName, accountKey, partnerKey, onOpen }) {
+/* Нүүрний "ойрын огноо" мөр — streak, ой, төрсөн өдөр, дараагийн үйл явдал.
+
+   Урьд нь эдгээр том карт эзэлдэг байв. Хамт байгаа хоногийн тоо профайл
+   дээр гарах болсон тул энд давхардуулахгүй, үлдсэнийг нь хажуу тийш
+   гүйдэг нэг мөр болгож шахав. */
+function TogetherStrip({ info, today, streak, partnerName, accountKey, partnerKey, nextEvent, onOpen }) {
   const since = info?.since;
-  const nth = since ? dayNumber(since, today) : null;
   const milestone = since ? nextMilestone(since, today) : null;
 
   /* Хоёулангийн төрсөн өдрөөс ойрхныг нь сонгоно */
@@ -388,9 +304,11 @@ function TogetherCard({ info, today, streak, partnerName, accountKey, partnerKey
   bdays.sort((a, b) => a.next.left - b.next.left);
   const bday = bdays[0];
 
-  if (!nth && !streak && !bday) {
+  /* Танилцсан өдөр оруулаагүй бол сануулна — эс бөгөөс ой, хоног хоёулаа
+     чимээгүй ажиллахгүй байх шалтгаан нь ойлгомжгүй болно. */
+  if (!since) {
     return (
-      <Card tint="#FEF6F1" className="mb-3" onClick={onOpen}>
+      <Card tint="#FEF6F1" className="mb-4" onClick={onOpen}>
         <div className="flex items-center gap-3">
           <img src={IC_DATES} alt="" className="w-10 h-10 shrink-0 object-contain" />
           <div className="flex-1 min-w-0">
@@ -403,47 +321,24 @@ function TogetherCard({ info, today, streak, partnerName, accountKey, partnerKey
     );
   }
 
-  return (
-    <Card tint="#FEF6F1" className="mb-3" onClick={onOpen}>
-      <div className="flex items-center gap-3 mb-2">
-        <img src={IC_DATES} alt="" className="w-10 h-10 shrink-0 object-contain" />
-        <div className="flex-1 min-w-0">
-          {nth ? (
-            <>
-              <div className="text-[15px] font-extrabold" style={{ color: C.ink }}>Хамт байгаа {nth} дахь өдөр</div>
-              {milestone && (
-                <div className="text-[11.5px] font-bold" style={{ color: C.peachDeep }}>
-                  {milestone.label} — {leftText(milestone.left)}
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Тэмдэглэлт огноо</div>
-          )}
-        </div>
-      </div>
+  const chips = [];
+  if (streak > 0) chips.push({ k: "streak", color: C.gold, text: `🔥 ${streak} өдөр дараалан` });
+  if (milestone) chips.push({ k: "ms", color: C.peachDeep, text: `✨ ${milestone.label} — ${leftText(milestone.left)}` });
+  if (bday) chips.push({ k: "bday", color: C.lilacDeep, text: `🎂 ${bday.who} төрсөн өдөр ${leftText(bday.next.left)}` });
+  if (nextEvent) chips.push({ k: "event", color: C.waterDeep, text: `📅 ${nextEvent.title} — ${leftText(nextEvent.left)}` });
+  if (!chips.length) return null;
 
-      <div className="flex gap-2 flex-wrap">
-        {streak > 0 && (
-          <span className="text-[11.5px] font-extrabold px-2.5 py-1 rounded-full"
-            style={{ background: C.card, border: `1.4px solid ${C.line}`, color: C.gold }}>
-            🔥 {streak} өдөр дараалан
-          </span>
-        )}
-        {bday && (
-          <span className="text-[11.5px] font-extrabold px-2.5 py-1 rounded-full"
-            style={{ background: C.card, border: `1.4px solid ${C.line}`, color: C.lilacDeep }}>
-            🎂 {bday.who} төрсөн өдөр {leftText(bday.next.left)}
-          </span>
-        )}
-      </div>
-    </Card>
+  return (
+    <div className="flex gap-2 overflow-x-auto hcarousel mb-4 -mx-5 px-5">
+      {chips.map((c) => (
+        <span key={c.k} className="text-[11.5px] font-extrabold px-3 py-1.5 rounded-full whitespace-nowrap shrink-0"
+          style={{ background: C.card, border: `1.4px solid ${C.line}`, color: c.color }}>
+          {c.text}
+        </span>
+      ))}
+    </div>
   );
 }
-
-
-
-
 
 /* ── Бодит цагийн газрын зураг ── */
 
@@ -510,24 +405,58 @@ function LoginScreen() {
 }
 
 /* ── Нүүр ── */
-/* Хамтрагчийн өнөөдрийн гурван үзүүлэлт — нэг хараад ойлгохуйц богино хэлбэр */
-function PartnerGlance({ partner }) {
-  const pItems = partner?.items || [];
-  const done = pItems.filter((i) => i.done).length;
-  const st = (partner?.screenApps || []).reduce((s, a) => s + a.min, 0) + (partner?.appMin || 0);
+/* Өдрийн гурван үзүүлэлт — нэг хараад ойлгохуйц богино хэлбэр.
+   go өгвөл багана бүр өөрийн дэлгэц рүү аваачих товч болно (өөрийн явц);
+   өгөхгүй бол зөвхөн харагдана (хамтрагчийнх — карт нь өөрөө дардаг). */
+function DayGlance({ ml, goal, items, screenApps, appMin, go }) {
+  const list = items || [];
+  const done = list.filter((i) => i.done).length;
+  const st = (screenApps || []).reduce((s, a) => s + a.min, 0) + (appMin || 0);
   const cols = [
-    { label: "Ус", text: `${partner?.ml ?? 0} мл`, value: partner?.ml ?? 0, max: partner?.goal || 1, color: C.waterDeep },
-    { label: "Жагсаалт", text: `${done}/${pItems.length}`, value: done, max: Math.max(pItems.length, 1), color: C.sageDeep },
-    { label: "Дэлгэц", text: `${Math.floor(st / 60)}ц ${st % 60}м`, value: st, max: 240, color: C.peachDeep },
+    { id: "water", label: "Ус", text: `${ml ?? 0} мл`, value: ml ?? 0, max: goal || 1, color: C.waterDeep },
+    { id: "list", label: "Жагсаалт", text: `${done}/${list.length}`, value: done, max: Math.max(list.length, 1), color: C.sageDeep },
+    { id: "screen", label: "Дэлгэц", text: `${Math.floor(st / 60)}ц ${st % 60}м`, value: st, max: 240, color: C.peachDeep },
   ];
   return (
     <div className="grid grid-cols-3 gap-2.5">
-      {cols.map((c) => (
-        <div key={c.label}>
-          <div className="text-[10.5px] font-bold mb-0.5" style={{ color: c.color }}>{c.label}</div>
-          <div className="text-[12px] font-extrabold mb-1 truncate" style={{ color: C.ink }}>{c.text}</div>
-          <Bar value={c.value} max={c.max} color={c.color} />
-        </div>
+      {cols.map((c) => {
+        const body = (
+          <>
+            <div className="text-[10.5px] font-bold mb-0.5" style={{ color: c.color }}>{c.label}</div>
+            <div className="text-[12px] font-extrabold mb-1 truncate" style={{ color: C.ink }}>{c.text}</div>
+            <Bar value={c.value} max={c.max} color={c.color} />
+          </>
+        );
+        if (!go) return <div key={c.id}>{body}</div>;
+        return (
+          <button key={c.id} onClick={() => go(c.id)} className="text-left active:scale-95"
+            style={{ transition: "transform 150ms ease" }}>{body}</button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* Нүүрний хэрэгслийн сүлжээ — өмнө нь тус бүр бүтэн өргөн мөр эзэлдэг байсан
+   зургаан линкийг 3×2 икон болгож шахав. */
+function ToolGrid({ go }) {
+  const tools = [
+    { id: "cal", icon: IC_CALENDAR, label: "Календарь" },
+    { id: "wish", icon: IC_WISH, label: "Хүслийн жагсаалт" },
+    { id: "map", icon: IC_MAP, label: "Газрын зураг" },
+    { id: "gif", icon: IC_GIF, label: "GIF хийх" },
+    { id: "screen", icon: IC_TIME, label: "Дэлгэцийн цаг" },
+    { id: "saved", icon: IC_NOTE, label: "Хадгалсан чат" },
+  ];
+  return (
+    <div className="grid grid-cols-3 gap-2.5 mb-4">
+      {tools.map((t) => (
+        <button key={t.id} onClick={() => go(t.id)}
+          className="rounded-[20px] py-3 px-1.5 flex flex-col items-center gap-1.5 active:scale-95"
+          style={{ background: C.card, border: `1.5px solid ${C.line}`, transition: "transform 150ms ease" }}>
+          <img src={t.icon} alt="" className="w-9 h-9 object-contain" />
+          <span className="text-[10.5px] font-extrabold text-center leading-tight" style={{ color: C.ink }}>{t.label}</span>
+        </button>
       ))}
     </div>
   );
@@ -536,8 +465,6 @@ function PartnerGlance({ partner }) {
 function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justReset, avatar, profileName, screenApps, appMin, partner, partnerName, partnerStatus, partnerSong, myStatus, mySong, coupleInfo, day, streak, nextEvent, accountKey, partnerKey, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
   const now = new Date();
   const greet = (clock.h < 11 ? "Өглөөний мэнд" : clock.h < 18 ? "Өдрийн мэнд" : "Оройн мэнд") + (profileName ? `, ${profileName}` : "");
-  const done = items.filter((i) => i.done).length;
-  const stTotal = screenApps.reduce((s, a) => s + a.min, 0) + appMin;
   const left = 86400 - (clock.h * 3600 + clock.m * 60 + clock.s);
 
   return (
@@ -587,7 +514,8 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
           {partnerSong?.title && (
             <div className="mb-2.5"><SongChip song={partnerSong} compact /></div>
           )}
-          <PartnerGlance partner={partner} />
+          <DayGlance ml={partner.ml} goal={partner.goal} items={partner.items}
+            screenApps={partner.screenApps} appMin={partner.appMin} />
         </Card>
       ) : partnerName ? (
         /* Хамтрагч хараахан нэвтрээгүй бол чимээгүй өнгөрөхгүй — шалтгааныг хэлнэ */
@@ -615,44 +543,12 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 mb-3">
-        <Card tint="#F5FBF3" onClick={() => go("list")}>
-          <img src={IC_CAT} alt="" className="w-12 h-12 rounded-2xl object-cover mb-2"
-            style={{ border: `1.5px solid ${C.line}` }} />
-          <div className="text-[13.5px] font-extrabold mb-1.5" style={{ color: C.ink }}>Нэг жагсаалт</div>
-          <div className="text-[11.5px] font-bold mb-1.5" style={{ color: C.sageDeep }}>{done}/{items.length}</div>
-          <Bar value={done} max={Math.max(items.length, 1)} color={C.sageDeep} />
-        </Card>
-
-        <Card tint="#F4FBFE" onClick={() => go("water")}>
-          <img src={IC_WATER} alt="" className="w-12 h-12 rounded-2xl object-cover mb-2"
-            style={{ border: `1.5px solid ${C.line}` }} />
-          <div className="text-[13.5px] font-extrabold mb-1.5" style={{ color: C.ink }}>Ус уух</div>
-          <div className="text-[11.5px] font-bold mb-1.5" style={{ color: C.waterDeep }}>
-            {Math.floor(ml / 250)}/{Math.round(goal / 250)} аяга
-          </div>
-          <Bar value={ml} max={goal} color={C.waterDeep} />
-        </Card>
-
-        <Card tint="#FEF6F1" onClick={() => go("screen")}>
-          <img src={IC_TIME} alt="" className="w-12 h-12 rounded-2xl object-cover mb-2"
-            style={{ border: `1.5px solid ${C.line}` }} />
-          <div className="text-[13.5px] font-extrabold mb-1.5" style={{ color: C.ink }}>Дэлгэцийн цаг</div>
-          <div className="text-[11.5px] font-bold mb-1.5" style={{ color: C.peachDeep }}>
-            {Math.floor(stTotal / 60)}ц {stTotal % 60}м
-          </div>
-          <Bar value={stTotal} max={240} color={C.peachDeep} />
-        </Card>
-
-        <Card tint="#F8F4FC" onClick={() => go("gif")}>
-          <img src={IC_GIF} alt="" className="w-12 h-12 rounded-2xl object-cover mb-2"
-            style={{ border: `1.5px solid ${C.line}` }} />
-          <div className="text-[13.5px] font-extrabold mb-1.5" style={{ color: C.ink }}>GIF хийх</div>
-          <div className="text-[11.5px] font-bold" style={{ color: C.lilacDeep }}>
-            {gifCount ? `${gifCount} кадр` : "Шинээр эхлэх"}
-          </div>
-        </Card>
-      </div>
+      {/* Миний өнөөдөр — хамтрагчийнхтай ижил хэлбэрээр, багана бүр өөрийн
+          дэлгэц рүү аваачна. Урьд нь энэ мэдээлэл дөрвөн том карт эзэлдэг байв. */}
+      <Card tint="#F5FBF3" className="mb-4">
+        <div className="text-[13px] font-extrabold mb-2" style={{ color: C.ink }}>Миний өнөөдөр</div>
+        <DayGlance ml={ml} goal={goal} items={items} screenApps={screenApps} appMin={appMin} go={go} />
+      </Card>
 
       {updateAvailable && (
         <Card tint="#F5FBF3" className="mb-3" onClick={onApplyUpdate}>
@@ -668,25 +564,13 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
         </Card>
       )}
 
-      <HomeCarousel />
+      <TogetherStrip info={coupleInfo} today={day} streak={streak} partnerName={partnerName}
+        accountKey={accountKey} partnerKey={partnerKey} nextEvent={nextEvent}
+        onOpen={() => go("editprofile")} />
 
-      <TogetherCard info={coupleInfo} today={day} streak={streak} partnerName={partnerName}
-        accountKey={accountKey} partnerKey={partnerKey} onOpen={() => go("profile")} />
-
-      <Card tint="#F4FBFE" className="mb-3" onClick={() => go("cal")}>
-        <div className="flex items-center gap-3">
-          <img src={IC_CALENDAR} alt="" className="w-10 h-10 shrink-0 object-contain" />
-          <div className="flex-1 min-w-0">
-            <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Хамтын календарь</div>
-            <div className="text-[11.5px] font-bold truncate" style={{ color: C.inkSoft }}>
-              {nextEvent ? `${nextEvent.title} — ${leftText(nextEvent.left)}` : "Төлөвлөгөө ба дурсамж"}
-            </div>
-          </div>
-          <ChevronLeft size={16} strokeWidth={2.6} style={{ color: C.inkSoft, transform: "rotate(180deg)" }} />
-        </div>
-      </Card>
-
-      <Card tint="#F8F4FC" className="mb-3" onClick={() => go("qa")}>
+      {/* Өдрийн асуултыг сүлжээнд оруулбал асуулт нь харагдахгүй болох тул
+          энэ нэг мөрийг үлдээв — өдөр бүр өөр агуулгатай. */}
+      <Card tint="#F8F4FC" className="mb-4" onClick={() => go("qa")}>
         <div className="flex items-center gap-3">
           <img src={IC_QUESTION} alt="" className="w-10 h-10 shrink-0 object-contain" />
           <div className="flex-1 min-w-0">
@@ -697,46 +581,7 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
         </div>
       </Card>
 
-      <Card tint="#FFFAF0" className="mb-3" onClick={() => go("wish")}>
-        <div className="flex items-center gap-3">
-          <img src={IC_WISH} alt="" className="w-10 h-10 shrink-0 object-contain" />
-          <div className="flex-1 min-w-0">
-            <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Хүслийн жагсаалт</div>
-            <div className="text-[11.5px] font-bold" style={{ color: C.inkSoft }}>Юу хүсэж байгаагаа бичих</div>
-          </div>
-          <ChevronLeft size={16} strokeWidth={2.6} style={{ color: C.inkSoft, transform: "rotate(180deg)" }} />
-        </div>
-      </Card>
-
-      <Card tint="#F4FBFE" className="mb-3" onClick={() => go("map")}>
-        <div className="flex items-center gap-3">
-          <img src={IC_MAP} alt="" className="w-10 h-10 shrink-0 object-contain" />
-          <div className="flex-1 min-w-0">
-            <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Газрын зураг</div>
-            <div className="text-[11.5px] font-bold" style={{ color: C.inkSoft }}>Хоёулангийнхаа байршлыг шууд харах</div>
-          </div>
-          <ChevronLeft size={16} strokeWidth={2.6} style={{ color: C.inkSoft, transform: "rotate(180deg)" }} />
-        </div>
-      </Card>
-
-      <Card tint="#F8F4FC" className="mb-3" onClick={() => go("chat")}>
-        <div className="flex items-center gap-3">
-          <div className="relative shrink-0">
-            <img src={IC_CHAT} alt="" className="w-10 h-10 object-contain" />
-            {/* Уншаагүй зурвасын тэмдэг */}
-            {chatUnread && (
-              <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full"
-                style={{ background: C.peachDeep, border: `2px solid ${C.card}` }} />
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Чат</div>
-            <div className="text-[11.5px] truncate font-medium" style={{ color: C.inkSoft }}>
-              {chatUnread ? "Шинэ зурвас ирсэн байна" : "Хайртай хүнтэйгээ шууд бичих"}
-            </div>
-          </div>
-        </div>
-      </Card>
+      <ToolGrid go={go} />
 
       <div className="mb-3"><LocationCard /></div>
 
