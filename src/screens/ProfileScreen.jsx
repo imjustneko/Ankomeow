@@ -6,9 +6,10 @@ import { Bar, Card, Header } from "../ui/primitives.jsx";
 import { auth, coupleDoc, profileDoc } from "../lib/firebase.js";
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "firebase/auth";
 import { serverTimestamp, setDoc } from "firebase/firestore";
-import { isValidDay } from "../lib/couple.js";
-import { Check, ChevronLeft, LogOut, Moon, Pencil, Sun, Upload } from "lucide-react";
-import { AVATARS, IC_NOTE } from "../lib/assets.js";
+import { dayNumber, isValidDay } from "../lib/couple.js";
+import { Check, LogOut, Menu, Moon, Music, Sun, Upload } from "lucide-react";
+import { SongChip, SongPicker } from "../ui/song.jsx";
+import { AVATARS } from "../lib/assets.js";
 import { compressImage } from "../lib/image.js";
 
 const STATUS_MAX = 80;
@@ -65,9 +66,10 @@ export function ChangePasswordCard() {
   );
 }
 
-export function StatusCard({ accountKey, status }) {
+export function StatusCard({ accountKey, status, song }) {
   const [text, setText] = useState("");
   const [editing, setEditing] = useState(false);
+  const [picking, setPicking] = useState(false);
 
   /* Firestore-оос ирсэн утгыг зөвхөн засварлаагүй үед л тусгана —
      бичиж байх үед хуруун доороос үсэг солигдохгүй. */
@@ -79,6 +81,12 @@ export function StatusCard({ accountKey, status }) {
     const t = (value ?? text).slice(0, STATUS_MAX).trim();
     setDoc(profileDoc(accountKey), { status: t, at: serverTimestamp() }, { merge: true }).catch(() => {});
     setEditing(false);
+  };
+
+  /* Дуу нь статустай нэг баримт дээр сууна — null бол хавсралтгүй гэсэн үг */
+  const saveSong = (s) => {
+    setDoc(profileDoc(accountKey), { song: s, at: serverTimestamp() }, { merge: true }).catch(() => {});
+    setPicking(false);
   };
 
   return (
@@ -111,6 +119,28 @@ export function StatusCard({ accountKey, status }) {
             Арилгах
           </button>
         )}
+      </div>
+
+      {/* Сонсож буй дуу — статусын хавсралт */}
+      <div className="mt-3 pt-3" style={{ borderTop: `1.2px solid ${C.line}` }}>
+        {song?.title ? (
+          <div className="flex items-center gap-2">
+            <SongChip song={song} onRemove={() => saveSong(null)} />
+            <button onClick={() => setPicking((p) => !p)}
+              className="shrink-0 text-[11px] font-extrabold px-2.5 py-1.5 rounded-full active:scale-95"
+              style={{ background: C.card, border: `1.4px solid ${C.line}`, color: C.inkSoft }}>
+              Солих
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => setPicking((p) => !p)}
+            className="flex items-center gap-2 rounded-full px-3 py-2 text-[12px] font-extrabold active:scale-95"
+            style={{ background: C.card, border: `1.4px solid ${C.line}`, color: C.ink, transition: "transform 140ms ease" }}>
+            <Music size={14} strokeWidth={2.6} color={C.lilacDeep} />
+            Сонсож буй дуугаа нэмэх
+          </button>
+        )}
+        {picking && <SongPicker onPick={saveSong} onClose={() => setPicking(false)} />}
       </div>
     </Card>
   );
@@ -151,114 +181,74 @@ export function CoupleDatesCard({ accountKey, info }) {
   );
 }
 
-/* ── Профайл ── */
-export function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, setAvatar, profileName, chibiEnabled, setChibiEnabled, savedCount, onOpenSaved, accountKey, myStatus, coupleInfo, themeMode, setThemeMode, onBack }) {
-  const [picking, setPicking] = useState(false);
-  const fileRef = useRef(null);
+/* ── Профайл дээрх нэг тоо (Instagram-ын "posts / followers") ── */
+function Stat({ n, label, onClick }) {
+  const body = (
+    <>
+      <div className="text-[17px] font-extrabold leading-tight" style={{ color: C.ink }}>{n}</div>
+      <div className="text-[11px] font-bold" style={{ color: C.inkSoft }}>{label}</div>
+    </>
+  );
+  if (!onClick) return <div className="text-center px-1">{body}</div>;
+  return (
+    <button onClick={onClick} className="text-center px-1 active:scale-95"
+      style={{ transition: "transform 150ms ease" }}>{body}</button>
+  );
+}
+
+/* ── Профайл — Instagram хэв ──
+   Дээд мөр: нэр + баруун талд ☰ тохиргоо. Дор нь аватар + гурван тоо, товч
+   танилцуулга, "Профайл засах" мөр. Тохиргоо, засварын талбарууд өөрсдийн
+   дэлгэцтэй болсон тул энэ дэлгэц зөвхөн харуулах үүрэгтэй. */
+export function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, avatar, profileName, savedCount, onOpenSaved, myStatus, mySong, coupleInfo, day, onEdit, onSettings }) {
   const done = items.filter((i) => i.done).length;
   const stTotal = screenApps.reduce((s, a) => s + a.min, 0) + appMin;
+  const together = coupleInfo?.since && day ? dayNumber(coupleInfo.since, day) : null;
 
-  const [uploadErr, setUploadErr] = useState("");
-
-  /* Утасны зураг 3–8MB байдаг. Шахалтгүйгээр data URL болговол localStorage-ийн
-     ~5MB хязгаараас хальж QuotaExceededError шидэгддэг байв — зураг солигдохгүй.
-     Аватар хамгийн ихдээ 512px харагддаг тул тэр хэмжээнд нь шахна (~60KB). */
-  const onUpload = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setUploadErr("");
-    try {
-      let quality = 0.8;
-      let dataUrl = await compressImage(file, 512, quality);
-      while (dataUrl.length > 300000 && quality > 0.4) {
-        quality -= 0.15;
-        dataUrl = await compressImage(file, 512, quality);
-      }
-      setAvatar(dataUrl);
-      setPicking(false);
-    } catch {
-      setUploadErr("Зургийг уншиж чадсангүй. Өөр зураг сонгоно уу.");
-    }
+  const actionBtn = {
+    background: C.card, border: `1.6px solid ${C.line2}`, color: C.ink,
+    transition: "transform 150ms ease",
   };
-
-  const exitApp = () => { window.close(); };
 
   return (
     <div>
-      <div className="flex items-start justify-between">
-        <Header title="Профайл" onBack={onBack} />
-        <button onClick={exitApp} className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 active:scale-95"
-          style={{ border: `1.6px solid ${C.line2}`, color: C.peachDeep, transition: "transform 150ms ease" }} aria-label="Гарах">
-          <LogOut size={16} strokeWidth={2.2} />
+      <div className="flex items-center justify-between gap-2 mb-5">
+        <h1 className="text-[22px] font-extrabold leading-tight truncate" style={{ color: C.ink }}>{profileName}</h1>
+        <button onClick={onSettings} aria-label="Тохиргоо"
+          className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 active:scale-95"
+          style={{ color: C.ink, transition: "transform 150ms ease" }}>
+          <Menu size={22} strokeWidth={2.2} />
         </button>
       </div>
 
-      <div className="flex flex-col items-center gap-3 mb-4">
-        <button onClick={() => setPicking((p) => !p)} className="relative active:scale-95" aria-label="Зураг солих"
-          style={{ transition: "transform 150ms ease" }}>
-          <img src={avatar} alt="" className="w-20 h-20 rounded-[26px] object-cover"
-            style={{ border: `2px solid ${C.line2}` }} />
-          <span className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full flex items-center justify-center"
-            style={{ background: C.peachDeep, border: "2px solid #fff" }}>
-            <Pencil size={13} strokeWidth={2.4} color="#fff" />
-          </span>
-        </button>
-        <div className="text-center">
-          <div className="text-[17px] font-extrabold" style={{ color: C.ink }}>{profileName}</div>
-          <div className="text-[12px] font-semibold" style={{ color: C.inkSoft }}>Төвлөрөх Хамтрах</div>
-          {myStatus && (
-            <div className="text-[12.5px] font-bold mt-1.5 px-3 py-1 rounded-full inline-block"
-              style={{ background: C.cardIn, color: C.ink }}>{myStatus}</div>
-          )}
+      <div className="flex items-center gap-4 mb-3">
+        <img src={avatar} alt="" className="w-[84px] h-[84px] rounded-full object-cover shrink-0"
+          style={{ border: `2px solid ${C.line2}` }} />
+        <div className="flex-1 flex justify-around min-w-0">
+          <Stat n={together ?? "—"} label="Хамт хоног" />
+          <Stat n={savedCount} label="Хадгалсан" onClick={onOpenSaved} />
+          <Stat n={gifCount} label="GIF кадр" />
         </div>
       </div>
 
-      <StatusCard accountKey={accountKey} status={myStatus} />
+      <div className="mb-3.5">
+        <div className="text-[12px] font-semibold" style={{ color: C.inkSoft }}>Төвлөрөх Хамтрах</div>
+        {myStatus && (
+          <div className="text-[13px] font-bold mt-1 leading-snug" style={{ color: C.ink }}>{myStatus}</div>
+        )}
+        {mySong?.title && <div className="flex mt-2"><SongChip song={mySong} /></div>}
+      </div>
 
-      <CoupleDatesCard accountKey={accountKey} info={coupleInfo} />
-
-      <ChangePasswordCard />
-
-      {picking && (
-        <Card tint="#FEF6F1" className="mb-4">
-          <div className="text-[12.5px] font-extrabold mb-2.5" style={{ color: C.ink }}>Зураг сонгох</div>
-          <div className="grid grid-cols-4 gap-2 mb-3">
-            {AVATARS.map((src, i) => (
-              <button key={i} onClick={() => { setAvatar(src); setPicking(false); }}
-                className="rounded-2xl overflow-hidden active:scale-95"
-                style={{ border: `2px solid ${avatar === src ? C.peachDeep : C.line}`, transition: "transform 150ms ease" }}>
-                <img src={src} alt="" className="w-full aspect-square object-cover" />
-              </button>
-            ))}
-          </div>
-          <button onClick={() => fileRef.current?.click()}
-            className="w-full rounded-full py-2.5 text-[12.5px] font-extrabold flex items-center justify-center gap-2 active:scale-[0.97]"
-            style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink, transition: "transform 150ms ease" }}>
-            <Upload size={15} strokeWidth={2.4} /> Өөрийн зураг оруулах
-          </button>
-          {uploadErr && (
-            <div className="text-[11.5px] font-bold mt-2 leading-snug" style={{ color: C.peachDeep }}>{uploadErr}</div>
-          )}
-          <input ref={fileRef} type="file" accept="image/*" onChange={onUpload} className="hidden" />
-        </Card>
-      )}
-
-      <button onClick={onOpenSaved} className="w-full text-left mb-4 active:scale-[0.99]"
-        style={{ transition: "transform 150ms ease" }}>
-        <Card tint="#F8F4FC">
-          <div className="flex items-center gap-3">
-            <img src={IC_NOTE} alt="" className="w-10 h-10 shrink-0 object-contain" />
-            <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-extrabold" style={{ color: C.ink }}>Хадгалсан чат</div>
-              <div className="text-[11.5px] font-bold" style={{ color: C.inkSoft }}>
-                {savedCount > 0 ? `${savedCount} зурвас` : "Дурсамжтай зурвасаа энд хадгал"}
-              </div>
-            </div>
-            <ChevronLeft size={16} strokeWidth={2.6} style={{ color: C.inkSoft, transform: "rotate(180deg)" }} />
-          </div>
-        </Card>
-      </button>
+      <div className="flex gap-2 mb-5">
+        <button onClick={onEdit} style={actionBtn}
+          className="flex-1 rounded-xl py-2 text-[12.5px] font-extrabold active:scale-[0.97]">
+          Профайл засах
+        </button>
+        <button onClick={onOpenSaved} style={actionBtn}
+          className="flex-1 rounded-xl py-2 text-[12.5px] font-extrabold active:scale-[0.97]">
+          Хадгалсан чат
+        </button>
+      </div>
 
       <div className="text-[13px] font-extrabold mb-2.5" style={{ color: C.ink }}>Өнөөдрийн явц</div>
       <div className="grid grid-cols-2 gap-3">
@@ -284,8 +274,83 @@ export function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, a
           <div className="text-[15px] font-extrabold" style={{ color: C.ink }}>{gifCount} кадр</div>
         </Card>
       </div>
+    </div>
+  );
+}
 
-      <div className="text-[13px] font-extrabold mt-4 mb-2.5" style={{ color: C.ink }}>Тохиргоо</div>
+/* ── Профайл засах ──
+   Зураг, статус (дуутайгаа), тэмдэглэлт огноо — өөрийг тодорхойлох бүх зүйл. */
+export function EditProfileScreen({ avatar, setAvatar, accountKey, myStatus, mySong, coupleInfo, onBack }) {
+  const fileRef = useRef(null);
+  const [uploadErr, setUploadErr] = useState("");
+
+  /* Утасны зураг 3–8MB байдаг. Шахалтгүйгээр data URL болговол localStorage-ийн
+     ~5MB хязгаараас хальж QuotaExceededError шидэгддэг байв — зураг солигдохгүй.
+     Аватар хамгийн ихдээ 512px харагддаг тул тэр хэмжээнд нь шахна (~60KB). */
+  const onUpload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploadErr("");
+    try {
+      let quality = 0.8;
+      let dataUrl = await compressImage(file, 512, quality);
+      while (dataUrl.length > 300000 && quality > 0.4) {
+        quality -= 0.15;
+        dataUrl = await compressImage(file, 512, quality);
+      }
+      setAvatar(dataUrl);
+    } catch {
+      setUploadErr("Зургийг уншиж чадсангүй. Өөр зураг сонгоно уу.");
+    }
+  };
+
+  return (
+    <div>
+      <Header title="Профайл засах" onBack={onBack} />
+
+      <Card tint="#FEF6F1" className="mb-4">
+        <div className="flex flex-col items-center gap-2.5 mb-3">
+          <img src={avatar} alt="" className="w-20 h-20 rounded-full object-cover"
+            style={{ border: `2px solid ${C.line2}` }} />
+          <button onClick={() => fileRef.current?.click()}
+            className="text-[12px] font-extrabold flex items-center gap-1.5 active:scale-95"
+            style={{ color: C.peachDeep, transition: "transform 150ms ease" }}>
+            <Upload size={14} strokeWidth={2.6} /> Өөрийн зураг оруулах
+          </button>
+          {uploadErr && (
+            <div className="text-[11.5px] font-bold leading-snug text-center" style={{ color: C.peachDeep }}>{uploadErr}</div>
+          )}
+          <input ref={fileRef} type="file" accept="image/*" onChange={onUpload} className="hidden" />
+        </div>
+        <div className="text-[11.5px] font-bold mb-2" style={{ color: C.inkSoft }}>Эсвэл бэлэн зургаас сонгох</div>
+        <div className="grid grid-cols-4 gap-2">
+          {AVATARS.map((src, i) => (
+            <button key={i} onClick={() => setAvatar(src)}
+              className="rounded-2xl overflow-hidden active:scale-95"
+              style={{ border: `2px solid ${avatar === src ? C.peachDeep : C.line}`, transition: "transform 150ms ease" }}>
+              <img src={src} alt="" className="w-full aspect-square object-cover" />
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      <StatusCard accountKey={accountKey} status={myStatus} song={mySong} />
+
+      <CoupleDatesCard accountKey={accountKey} info={coupleInfo} />
+    </div>
+  );
+}
+
+/* ── Тохиргоо (☰) ──
+   Аппын үйлдлийг өөрчилдөг бүх зүйл энд. */
+export function SettingsScreen({ chibiEnabled, setChibiEnabled, themeMode, setThemeMode, onBack }) {
+  const exitApp = () => { window.close(); };
+
+  return (
+    <div>
+      <Header title="Тохиргоо" onBack={onBack} />
+
       <Card tint="#F4FBFE" className="mb-3">
         <div className="text-[13px] font-extrabold mb-0.5" style={{ color: C.ink }}>Өнгөний горим</div>
         <div className="text-[11.5px] font-bold mb-2.5" style={{ color: C.inkSoft }}>
@@ -310,7 +375,7 @@ export function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, a
         </div>
       </Card>
 
-      <Card tint="#F8F4FC">
+      <Card tint="#F8F4FC" className="mb-3">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="text-[13px] font-extrabold mb-0.5" style={{ color: C.ink }}>Chibi хамтрагч</div>
@@ -332,6 +397,14 @@ export function ProfileScreen({ ml, goal, items, gifCount, screenApps, appMin, a
           </button>
         </div>
       </Card>
+
+      <ChangePasswordCard />
+
+      <button onClick={exitApp}
+        className="w-full rounded-full py-3 text-[12.5px] font-extrabold flex items-center justify-center gap-2 active:scale-[0.97]"
+        style={{ background: C.card, border: `1.6px solid ${C.line2}`, color: C.peachDeep, transition: "transform 150ms ease" }}>
+        <LogOut size={15} strokeWidth={2.4} /> Аппаас гарах
+      </button>
     </div>
   );
 }
