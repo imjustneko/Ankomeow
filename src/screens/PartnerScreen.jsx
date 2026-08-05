@@ -12,13 +12,17 @@ import { SongChip } from "../ui/song.jsx";
 import { PostGallery } from "../ui/posts.jsx";
 
 /* ── Хамтрагчийн явц (зөвхөн харах) ── */
-export function PartnerScreen({ partner, accountKey, partnerKey, partnerStatus, partnerSong, onBack }) {
+export function PartnerScreen({ partner, accountKey, partnerKey, partnerStatus, partnerSong, onSeen, onBack }) {
   const items = partner?.items || [];
   const done = items.filter((i) => i.done).length;
   const stTotal = (partner?.screenApps || []).reduce((s, a) => s + a.min, 0) + (partner?.appMin || 0);
   const gifCount = (partner?.gifFrames || []).length;
   const ml = partner?.ml ?? 0;
   const goal = partner?.goal || 1;
+
+  /* Энэ дэлгэцийг нээсэн нь "шинэ мэдээг нь харлаа" гэсэн үг —
+     нүүрэн дэх story тойрог унтарна. */
+  useEffect(() => { onSeen?.(); }, [partnerKey]);
 
   useEffect(() => {
     if (!partnerKey || !accountKey) return;

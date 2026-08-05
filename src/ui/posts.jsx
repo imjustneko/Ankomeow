@@ -7,11 +7,11 @@
    тулд хоёуланг нь шахна. */
 
 import { useEffect, useRef, useState } from "react";
-import { deleteDoc, addDoc, onSnapshot, orderBy, query, serverTimestamp } from "firebase/firestore";
+import { deleteDoc, addDoc, onSnapshot, orderBy, query, serverTimestamp, setDoc } from "firebase/firestore";
 import { ImagePlus, Trash2, X } from "lucide-react";
 import { C } from "../lib/theme.js";
 import { Card } from "./primitives.jsx";
-import { postsCol, postDoc, blobDoc } from "../lib/firebase.js";
+import { postsCol, postDoc, blobDoc, profileDoc } from "../lib/firebase.js";
 import { compressImage } from "../lib/image.js";
 import { loadBlob, putBlob } from "./message.jsx";
 
@@ -85,6 +85,9 @@ export function PostComposer({ accountKey, onClose }) {
         caption: caption.trim().slice(0, CAPTION_MAX),
         createdAt: serverTimestamp(),
       });
+      /* Профайлын "агуулга шинэчлэгдсэн" мөчийг хөдөлгөнө — хамтрагчийн
+         нүүрэн дэх story тойрог шинэ зураг байгааг мэдэж асна. */
+      setDoc(profileDoc(accountKey), { at: serverTimestamp() }, { merge: true }).catch(() => {});
       onClose();
     } catch {
       setErr("Нийтэлж чадсангүй. Сүлжээгээ шалгаад дахин оролдоно уу.");

@@ -48,6 +48,7 @@ import {
 import { DRAW_UNITS, DRAW_COLORS, DRAW_SIZES, DRAW_MIN_STEP, DRAW_MAX_POINTS, DRAW_CHECKER, strokePoints, smoothPath, assistShape } from "./src/lib/drawing.js";
 import { MAP_TILE, MAP_ZOOM, MAP_W, MAP_H, MAP_MIN_Z, MAP_MAX_Z, MAP_CREDIT, tileUrl, worldPx, pxToLatLng, mapTiles } from "./src/lib/map.js";
 import { questionForDay } from "./src/lib/questions.js";
+import { CHEER_TEXT, goalsMet, hasUnseen, isOnline, pendingCheers } from "./src/lib/cheer.js";
 import { MONTHS, WEEKDAYS, monthKey, monthGrid, addMonths, eventsOn, upcoming, isDue } from "./src/lib/calendar.js";
 import { distanceM, prettyDistance, metersPerPx, placeAt, geofenceEvent, DEFAULT_RADIUS } from "./src/lib/geo.js";
 import { dayNumber, nextMilestone, nextBirthday, streakCount, bothDoneDays, leftText, isValidDay } from "./src/lib/couple.js";
@@ -469,7 +470,7 @@ function ToolGrid({ go }) {
   );
 }
 
-function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justReset, avatar, profileName, screenApps, appMin, partner, partnerName, partnerStatus, partnerSong, myStatus, mySong, coupleInfo, day, streak, nextEvent, accountKey, partnerKey, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
+function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justReset, avatar, profileName, screenApps, appMin, partner, partnerName, partnerStatus, partnerSong, partnerUnseen, partnerOnline, myStatus, mySong, coupleInfo, day, streak, nextEvent, accountKey, partnerKey, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
   const now = new Date();
   const greet = (clock.h < 11 ? "Өглөөний мэнд" : clock.h < 18 ? "Өдрийн мэнд" : "Оройн мэнд") + (profileName ? `, ${profileName}` : "");
   const left = 86400 - (clock.h * 3600 + clock.m * 60 + clock.s);
@@ -500,6 +501,7 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
         partner={{
           avatar: partner?.avatar, name: partnerName,
           status: partnerStatus, song: partnerSong, offline: !partner,
+          unseen: partnerUnseen, online: partnerOnline,
         }}
         onMe={() => go("editprofile")}
         onPartner={() => partner && go("partner")} />
@@ -601,6 +603,8 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
 
 /* ── апп ── */
 const STORE_KEY = "ankomeow-state-v1";
+/* Хамтрагчийн шинэ мэдээг сүүлд харсан мөч — эзэн тус бүрээр */
+const SEEN_KEY = (key) => `ankomeow-seen-${key}`;
 const loadSaved = () => {
   try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch { return {}; }
 };
@@ -670,6 +674,10 @@ export default function App() {
   const [partnerStatus, setPartnerStatus] = useState("");
   const [mySong, setMySong] = useState(null);
   const [partnerSong, setPartnerSong] = useState(null);
+  const [partnerAt, setPartnerAt] = useState(0);       /* агуулга сүүлд өөрчлөгдсөн */
+  const [partnerSeenAt, setPartnerSeenAt] = useState(0); /* апп сүүлд нээлттэй байсан */
+  const [partnerSeen, setPartnerSeen] = useState(0);   /* би сүүлд харсан */
+  const [cheer, setCheer] = useState(null);
   const [coupleInfo, setCoupleInfo] = useState(null);
   const [doneDays, setDoneDays] = useState([]);
   const [events, setEvents] = useState([]);
@@ -816,13 +824,84 @@ export default function App() {
   }, [accountKey]);
 
   useEffect(() => {
-    if (!partnerKey) { setPartnerStatus(""); setPartnerSong(null); return; }
+    if (!partnerKey) { setPartnerStatus(""); setPartnerSong(null); setPartnerAt(0); setPartnerSeenAt(0); return; }
     const unsub = onSnapshot(profileDoc(partnerKey), (s) => {
-      setPartnerStatus(s.data()?.status || "");
-      setPartnerSong(s.data()?.song || null);
+      const d = s.data() || {};
+      setPartnerStatus(d.status || "");
+      setPartnerSong(d.song || null);
+      /* at — агуулга сүүлд өөрчлөгдсөн мөч (статус/дуу/зураг).
+         seenAt — апп сүүлд нээлттэй байсан мөч. Хоёр өөр асуулт. */
+      setPartnerAt(d.at?.toMillis?.() || 0);
+      setPartnerSeenAt(d.seenAt?.toMillis?.() || 0);
     }, () => {});
     return unsub;
   }, [partnerKey]);
+
+  /* Хамтрагчийн шинэ мэдээг харсан мөчийг утсандаа тэмдэглэнэ — story
+     тойрог үүнээс хойш өөрчлөлт гарсан үед л асна. */
+  useEffect(() => {
+    if (!partnerKey) return;
+    setPartnerSeen(Number(localStorage.getItem(SEEN_KEY(partnerKey)) || 0));
+  }, [partnerKey]);
+
+  const markPartnerSeen = () => {
+    if (!partnerKey) return;
+    const now = Date.now();
+    try { localStorage.setItem(SEEN_KEY(partnerKey), String(now)); } catch {}
+    setPartnerSeen(now);
+  };
+
+  const partnerUnseen = hasUnseen(partnerAt, partnerSeen);
+  /* Онлайн эсэх нь цаг өнгөрөхөд өөрөө хуучирдаг тул секунд тутмын цагт
+     холбоно — эс бөгөөс 5 минут өнгөрсөн ч ногоон хэвээр үлдэх байв. */
+  const partnerOnline = useMemo(() => isOnline(partnerSeenAt, Date.now()), [partnerSeenAt, clock]);
+
+  /* "Яг одоо апп нээлттэй" дохио. Апп харагдаж байх үед л бичнэ —
+     хаалттай таб байхад онлайн гэж худлаа хэлэхгүй. */
+  useEffect(() => {
+    if (!accountKey) return;
+    const ping = () => {
+      if (document.visibilityState !== "visible") return;
+      setDoc(profileDoc(accountKey), { seenAt: serverTimestamp() }, { merge: true }).catch(() => {});
+    };
+    ping();
+    const id = setInterval(ping, 90000);
+    document.addEventListener("visibilitychange", ping);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", ping);
+    };
+  }, [accountKey]);
+
+  /* Өдрийн зорилго шинээр биелэх мөч — чибь баярлаж, утас чичирч,
+     хамтрагчид мэдэгдэнэ. Өдөрт нэг л удаа: тэмдэглэгээг өдрөөр нь
+     түлхүүрлэж утсанд хадгална, эс бөгөөс апп сэргээх бүрд давтагдана. */
+  useEffect(() => {
+    if (!accountKey) return;
+    const key = `ankomeow-cheer-${day}`;
+    let done;
+    try { done = new Set(JSON.parse(localStorage.getItem(key) || "[]")); } catch { done = new Set(); }
+    const fresh = pendingCheers(goalsMet({ ml, goal, items }), done);
+    if (!fresh.length) return;
+
+    for (const k of fresh) done.add(k);
+    try { localStorage.setItem(key, JSON.stringify([...done])); } catch {}
+
+    const first = fresh[0];
+    setCheer(CHEER_TEXT[first].toast);
+    setTimeout(() => setCheer(null), 4000);
+    setChibiHappyAt(Date.now());
+    navigator.vibrate?.([18, 60, 18]);
+    if (partnerKey) {
+      notifyPartner(auth, {
+        to: partnerKey,
+        title: ACCOUNTS[accountKey]?.name || "Хамтрагч",
+        body: CHEER_TEXT[first].notify,
+        tag: `cheer-${first}`,
+        tab: "home",
+      });
+    }
+  }, [accountKey, partnerKey, day, ml, goal, items]);
 
   useEffect(() => {
     if (!accountKey) { setSavedIds(new Set()); return; }
@@ -1352,6 +1431,14 @@ export default function App() {
         )}
 
         {/* Хамтрагч чиний мэдээллийг харлаа гэсэн богино мэдэгдэл */}
+        {/* Өдрийн зорилгод хүрсэн мөч */}
+        {cheer && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 rounded-full px-4 py-2 text-[12px] font-extrabold shadow-lg"
+            style={{ background: C.sageDeep, color: "#fff" }}>
+            {cheer}
+          </div>
+        )}
+
         {peekToast && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 rounded-full px-4 py-2 text-[12px] font-extrabold shadow-lg"
             style={{ background: C.lilacDeep, color: "#fff" }}>
@@ -1402,7 +1489,7 @@ export default function App() {
                 </div>
               )}
               <div key={tab} className={`${navDir === "back" ? "scr-back" : "scr-in"} ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
-                {tab === "home" && <HomeScreen go={go} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} partnerStatus={partnerStatus} partnerSong={partnerSong} myStatus={myStatus} mySong={mySong} coupleInfo={coupleInfo} day={day} streak={streak} nextEvent={nextEvent} accountKey={accountKey} partnerKey={partnerKey} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} chatUnread={chatUnread} />}
+                {tab === "home" && <HomeScreen go={go} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} partnerStatus={partnerStatus} partnerSong={partnerSong} partnerUnseen={partnerUnseen} partnerOnline={partnerOnline} myStatus={myStatus} mySong={mySong} coupleInfo={coupleInfo} day={day} streak={streak} nextEvent={nextEvent} accountKey={accountKey} partnerKey={partnerKey} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} chatUnread={chatUnread} />}
                 {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "list" && <ListScreen items={items} setItems={setItems} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "screen" && <ScreenTimeScreen {...{ screenApps, screenHistory, appMin }} partner={partnerStats} onBack={() => go("home")} />}
@@ -1422,7 +1509,7 @@ export default function App() {
                 {tab === "map" && <LiveMapScreen accountKey={accountKey} partnerKey={partnerKey} profileName={profileName}
                   partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} avatar={avatar} partnerAvatar={partnerStats?.avatar}
                   onBack={() => go("home")} />}
-                {tab === "partner" && <PartnerScreen partner={partnerStats} accountKey={accountKey} partnerKey={partnerKey} partnerStatus={partnerStatus} partnerSong={partnerSong} onBack={() => go("home")} />}
+                {tab === "partner" && <PartnerScreen partner={partnerStats} accountKey={accountKey} partnerKey={partnerKey} partnerStatus={partnerStatus} partnerSong={partnerSong} onSeen={markPartnerSeen} onBack={() => go("home")} />}
                 {tab === "chat" && <ChatScreen onBack={() => go("home")} profileName={profileName} accountKey={accountKey} partnerKey={partnerKey} savedIds={savedIds} onPartnerBubble={handlePartnerBubble} />}
               </div>
             </div>
