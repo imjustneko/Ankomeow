@@ -8,9 +8,10 @@ import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { notifyPartner } from "../push.js";
 import { Check } from "lucide-react";
 import { IC_PROFILE } from "../lib/assets.js";
+import { SongChip } from "../ui/song.jsx";
 
 /* ── Хамтрагчийн явц (зөвхөн харах) ── */
-export function PartnerScreen({ partner, accountKey, partnerKey, partnerStatus, onBack }) {
+export function PartnerScreen({ partner, accountKey, partnerKey, partnerStatus, partnerSong, onBack }) {
   const items = partner?.items || [];
   const done = items.filter((i) => i.done).length;
   const stTotal = (partner?.screenApps || []).reduce((s, a) => s + a.min, 0) + (partner?.appMin || 0);
@@ -41,6 +42,8 @@ export function PartnerScreen({ partner, accountKey, partnerKey, partnerStatus, 
           <div className="text-[12.5px] font-bold px-3.5 py-1.5 rounded-full text-center"
             style={{ background: C.cardIn, color: C.ink }}>{partnerStatus}</div>
         )}
+        {/* Хамтрагчийн сонсож буй дуу — дарвал 30 секундын хэсэг тоглоно */}
+        {partnerSong?.title && <SongChip song={partnerSong} />}
       </div>
 
       <div className="grid grid-cols-2 gap-3 mb-5">
