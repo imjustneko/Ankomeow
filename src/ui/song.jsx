@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Music, Pause, Play, Search, X } from "lucide-react";
 import { C } from "../lib/theme.js";
-import { searchSongs } from "../lib/music.js";
+import { freshPreview, searchSongs } from "../lib/music.js";
 
 /* ── Ганц preview тоглуулагч ── */
 let audioEl = null;
@@ -31,17 +31,36 @@ export function stopPreview() {
   }
 }
 
-export function togglePreview(song) {
-  if (!song?.preview) return;
+export function togglePreview(song, src) {
+  const url = src || song?.preview;
+  if (!url) return;
   if (playingId === song.id) return stopPreview();
   stopPreview();
-  audioEl = new Audio(song.preview);
+  audioEl = new Audio(url);
   audioEl.addEventListener("ended", stopPreview);
   /* Автомат тоглуулалтыг browser хориглож болзошгүй — чимээгүй бүтэлгүйтвэл
      товч эргээд "тоглуулах" төлөвт орно. */
   audioEl.play().catch(stopPreview);
   playingId = song.id;
   announce();
+}
+
+/* Deezer-ийн preview холбоос ойролцоогоор нэг хоногийн дараа хүчингүй болдог.
+   Хадгалсан дууг тоглуулах гэхэд шинийг нь татах гэж хүлээвэл iOS Safari
+   товшилтын хэлхээ тасарсан гэж үзээд дууг хориглоно. Тиймээс дэлгэц дээр
+   гармагц далд байдлаар урьдчилж татаж тавина — дарах үед бэлэн байна. */
+function usePlayableUrl(song) {
+  const [url, setUrl] = useState(song?.preview || "");
+  useEffect(() => {
+    setUrl(song?.preview || "");
+    if (!song?.id || song.src !== "deezer") return;
+    const ctl = new AbortController();
+    freshPreview(song, { signal: ctl.signal })
+      .then((u) => { if (!ctl.signal.aborted && u) setUrl(u); })
+      .catch(() => {});
+    return () => ctl.abort();
+  }, [song?.id, song?.preview, song?.src]);
+  return url;
 }
 
 function usePlayingId() {
@@ -57,6 +76,7 @@ function usePlayingId() {
    compact — нүүрний нарийхан карт дотор багтах жижиг хувилбар. */
 export function SongChip({ song, compact = false, onRemove }) {
   const nowId = usePlayingId();
+  const url = usePlayableUrl(song);
   if (!song?.title) return null;
 
   const playing = nowId === song.id;
@@ -85,9 +105,9 @@ export function SongChip({ song, compact = false, onRemove }) {
         )}
       </div>
 
-      {song.preview && (
+      {url && (
         <button
-          onClick={(e) => { e.stopPropagation(); togglePreview(song); }}
+          onClick={(e) => { e.stopPropagation(); togglePreview(song, url); }}
           aria-label={playing ? "Зогсоох" : "Сонсох"}
           className="shrink-0 rounded-full flex items-center justify-center active:scale-90"
           style={{

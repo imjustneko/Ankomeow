@@ -1,101 +1,114 @@
 import { describe, it, expect } from "vitest";
-import { artworkUrl, toSong, parseResults, searchSongs } from "./music.js";
+import { toSong, parseResults, searchSongs, freshPreview } from "./music.js";
 
-const raw = (over = {}) => ({
-  trackId: 1,
-  trackName: "Blinding Lights",
-  artistName: "The Weeknd",
-  artworkUrl100: "https://is1.mzstatic.com/image/thumb/Music125/v4/aa/bb/cc/x/source/100x100bb.jpg",
-  previewUrl: "https://audio.example/preview.m4a",
-  trackViewUrl: "https://music.apple.com/track/1",
+const track = (over = {}) => ({
+  id: 2600565262,
+  title: "want u",
+  link: "https://www.deezer.com/track/2600565262",
+  preview: "https://cdnt-preview.dzcdn.net/x.mp3?hdnea=exp=1785903240",
+  artist: { name: "noevdv" },
+  album: {
+    cover_small: "https://cdn-images.dzcdn.net/a/56x56.jpg",
+    cover_medium: "https://cdn-images.dzcdn.net/a/250x250.jpg",
+  },
   ...over,
-});
-
-describe("artworkUrl", () => {
-  it("зургийн хэмжээг сольж илүү тодыг гуйна", () => {
-    expect(artworkUrl(raw().artworkUrl100)).toMatch(/\/200x200bb\.jpg$/);
-  });
-
-  it("хоосон утгад хоосон буцаана", () => {
-    expect(artworkUrl("")).toBe("");
-    expect(artworkUrl(undefined)).toBe("");
-  });
-
-  it("танихгүй хэлбэрийн замыг гэмтээхгүй", () => {
-    const odd = "https://example.com/cover.webp";
-    expect(artworkUrl(odd)).toBe(odd);
-  });
 });
 
 describe("toSong", () => {
   it("хэрэгтэй талбаруудыг гаргаж авна", () => {
-    expect(toSong(raw())).toEqual({
-      id: "1",
-      title: "Blinding Lights",
-      artist: "The Weeknd",
-      art: expect.stringContaining("200x200"),
-      preview: "https://audio.example/preview.m4a",
-      url: "https://music.apple.com/track/1",
+    expect(toSong(track())).toEqual({
+      id: "2600565262",
+      src: "deezer",
+      title: "want u",
+      artist: "noevdv",
+      art: "https://cdn-images.dzcdn.net/a/250x250.jpg",
+      preview: "https://cdnt-preview.dzcdn.net/x.mp3?hdnea=exp=1785903240",
+      url: "https://www.deezer.com/track/2600565262",
     });
   });
 
+  it("дунд зэргийн зураг байхгүй бол жижгээр нь орлуулна", () => {
+    const s = toSong(track({ album: { cover_small: "small.jpg" } }));
+    expect(s.art).toBe("small.jpg");
+  });
+
   it("нэр эсвэл id байхгүй бол null", () => {
-    expect(toSong(raw({ trackName: undefined }))).toBeNull();
-    expect(toSong(raw({ trackId: undefined }))).toBeNull();
+    expect(toSong(track({ title: undefined }))).toBeNull();
+    expect(toSong(track({ id: undefined }))).toBeNull();
     expect(toSong(null)).toBeNull();
   });
 
   it("preview байхгүй бол хоосон мөр — дуу нь өөрөө хүчинтэй хэвээр", () => {
-    expect(toSong(raw({ previewUrl: undefined })).preview).toBe("");
+    expect(toSong(track({ preview: undefined })).preview).toBe("");
   });
 });
 
 describe("parseResults", () => {
   it("нэг дуу олон цомгоос давхардвал нэгийг л үлдээнэ", () => {
-    const json = { results: [raw({ trackId: 1 }), raw({ trackId: 2 }), raw({ trackId: 3, trackName: "Save Your Tears" })] };
-    const out = parseResults(json);
-    expect(out.map((s) => s.title)).toEqual(["Blinding Lights", "Save Your Tears"]);
+    const json = { data: [track({ id: 1 }), track({ id: 2 }), track({ id: 3, title: "Clara" })] };
+    expect(parseResults(json).map((s) => s.title)).toEqual(["want u", "Clara"]);
   });
 
   it("limit-ээс илүүг таслана", () => {
-    const json = { results: [1, 2, 3, 4].map((n) => raw({ trackId: n, trackName: `Song ${n}` })) };
+    const json = { data: [1, 2, 3, 4].map((n) => track({ id: n, title: `Song ${n}` })) };
     expect(parseResults(json, 2)).toHaveLength(2);
   });
 
   it("буруу хэлбэрийн хариунд хоосон массив", () => {
     expect(parseResults(null)).toEqual([]);
     expect(parseResults({})).toEqual([]);
-    expect(parseResults({ results: "not-an-array" })).toEqual([]);
+    expect(parseResults({ data: "not-an-array" })).toEqual([]);
   });
 });
 
 describe("searchSongs", () => {
-  const okFetch = (json) => async () => ({ ok: true, json: async () => json });
-
   it("2-оос бага үсэгт хүсэлт огт явуулахгүй", async () => {
     let called = 0;
-    const fetchImpl = async () => { called++; return { ok: true, json: async () => ({}) }; };
-    expect(await searchSongs("a", { fetchImpl })).toEqual([]);
-    expect(await searchSongs("   ", { fetchImpl })).toEqual([]);
+    const jsonpImpl = async () => { called++; return { data: [] }; };
+    expect(await searchSongs("a", { jsonpImpl })).toEqual([]);
+    expect(await searchSongs("   ", { jsonpImpl })).toEqual([]);
     expect(called).toBe(0);
   });
 
   it("хайлтын үгийг зөв кодлож дуудна", async () => {
     let url = "";
-    const fetchImpl = async (u) => { url = u; return { ok: true, json: async () => ({ results: [raw()] }) }; };
-    await searchSongs("the weeknd & co", { fetchImpl });
-    expect(url).toContain("term=the%20weeknd%20%26%20co");
-    expect(url).toContain("entity=song");
+    const jsonpImpl = async (u) => { url = u; return { data: [track()] }; };
+    await searchSongs("noevdv & co", { jsonpImpl });
+    expect(url).toContain("/search?q=noevdv%20%26%20co");
   });
 
-  it("HTTP алдаанд шидэж, дуудагч талд мэдэгдэнэ", async () => {
-    const fetchImpl = async () => ({ ok: false, status: 503 });
-    await expect(searchSongs("test", { fetchImpl })).rejects.toThrow("503");
+  it("Deezer алдаа буцаавал шидэж, дуудагч талд мэдэгдэнэ", async () => {
+    const jsonpImpl = async () => ({ error: { message: "Quota limit exceeded" } });
+    await expect(searchSongs("test", { jsonpImpl })).rejects.toThrow("Quota");
   });
 
   it("амжилттай хариуг дууны жагсаалт болгоно", async () => {
-    const out = await searchSongs("blinding", { fetchImpl: okFetch({ results: [raw()] }) });
+    const out = await searchSongs("want u", { jsonpImpl: async () => ({ data: [track()] }) });
     expect(out).toHaveLength(1);
-    expect(out[0].title).toBe("Blinding Lights");
+    expect(out[0].artist).toBe("noevdv");
+  });
+});
+
+describe("freshPreview", () => {
+  it("Deezer дууны шинэ холбоосыг дугаараар нь татна", async () => {
+    let url = "";
+    const jsonpImpl = async (u) => { url = u; return { preview: "https://new.mp3" }; };
+    const out = await freshPreview(toSong(track()), { jsonpImpl });
+    expect(url).toContain("/track/2600565262");
+    expect(out).toBe("https://new.mp3");
+  });
+
+  it("Deezer биш дуунд сүлжээ хөдөлгөхгүй — хуучин холбоос хугацаагүй", async () => {
+    let called = 0;
+    const jsonpImpl = async () => { called++; return {}; };
+    const old = { id: "1", src: "itunes", preview: "https://itunes/x.m4a" };
+    expect(await freshPreview(old, { jsonpImpl })).toBe("https://itunes/x.m4a");
+    expect(called).toBe(0);
+  });
+
+  it("шинэ холбоос ирээгүй бол хуучныг үлдээнэ", async () => {
+    const s = toSong(track());
+    const out = await freshPreview(s, { jsonpImpl: async () => ({}) });
+    expect(out).toBe(s.preview);
   });
 });
