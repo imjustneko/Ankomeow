@@ -422,15 +422,22 @@ function DayGlance({ ml, goal, items, screenApps, appMin, go }) {
       {cols.map((c) => {
         const body = (
           <>
-            <div className="text-[10.5px] font-bold mb-0.5" style={{ color: c.color }}>{c.label}</div>
+            <div className="flex items-center gap-0.5 mb-0.5">
+              <span className="text-[10.5px] font-bold truncate" style={{ color: c.color }}>{c.label}</span>
+              {/* Дарж болохыг заана — эс бөгөөс зүгээр тоо мэт харагдана */}
+              {go && <ChevronLeft size={11} strokeWidth={3} style={{ color: c.color, transform: "rotate(180deg)" }} />}
+            </div>
             <div className="text-[12px] font-extrabold mb-1 truncate" style={{ color: C.ink }}>{c.text}</div>
             <Bar value={c.value} max={c.max} color={c.color} />
           </>
         );
         if (!go) return <div key={c.id}>{body}</div>;
         return (
-          <button key={c.id} onClick={() => go(c.id)} className="text-left active:scale-95"
-            style={{ transition: "transform 150ms ease" }}>{body}</button>
+          <button key={c.id} onClick={() => go(c.id)} aria-label={`${c.label} рүү очих`}
+            className="text-left rounded-2xl px-2.5 py-2 active:scale-95"
+            style={{ background: C.card, border: `1.4px solid ${C.line}`, transition: "transform 150ms ease" }}>
+            {body}
+          </button>
         );
       })}
     </div>
