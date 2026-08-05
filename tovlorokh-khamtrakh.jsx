@@ -22,7 +22,7 @@ import { DrawingView, DrawPad } from "./src/ui/drawing.jsx";
 import { SongChip } from "./src/ui/song.jsx";
 import { StoryRow } from "./src/ui/story.jsx";
 import {
-  IMG, LOGO, IC_PROFILE, IC_TIME, IC_GIF, IC_HOME, IC_NOTE, AVATARS,
+  IMG, LOGO, IC_PROFILE, IC_TIME, IC_GIF, IC_HOME, IC_NOTE,
   BG_MAIN, GRAIN, WELCOME_HERO, NAV_HOME, NAV_WATER, NAV_CHAT,
   LOAD_0, LOAD_25, LOAD_50, LOAD_75, LOAD_90, LOAD_100, LOAD_ALMOST, LOAD_DONE, LOAD_FINISH,
   IC_DATES, IC_CALENDAR, IC_QUESTION, IC_WISH, IC_MAP, IC_LOCATION,

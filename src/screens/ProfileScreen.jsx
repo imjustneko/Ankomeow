@@ -7,10 +7,9 @@ import { auth, coupleDoc, profileDoc } from "../lib/firebase.js";
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "firebase/auth";
 import { serverTimestamp, setDoc } from "firebase/firestore";
 import { dayNumber, isValidDay } from "../lib/couple.js";
-import { Check, LogOut, Menu, Moon, Music, Plus, Sun, Upload } from "lucide-react";
+import { Camera, Check, LogOut, Menu, Moon, Music, Plus, Sun } from "lucide-react";
 import { SongChip, SongPicker } from "../ui/song.jsx";
 import { PostComposer, PostGallery, usePosts } from "../ui/posts.jsx";
-import { AVATARS } from "../lib/assets.js";
 import { compressImage } from "../lib/image.js";
 
 const STATUS_MAX = 80;
@@ -324,29 +323,28 @@ export function EditProfileScreen({ avatar, setAvatar, accountKey, myStatus, myS
     <div>
       <Header title="Профайл засах" onBack={onBack} />
 
+      {/* Аватар өөрөө товч — бусад платформтой ижил: зураг дээрээ дараад
+          өөрийн зургаа сонгоно. Бэлэн зургийн сан байхаа больсон. */}
       <Card tint="#FEF6F1" className="mb-4">
-        <div className="flex flex-col items-center gap-2.5 mb-3">
-          <img src={avatar} alt="" className="w-20 h-20 rounded-full object-cover"
-            style={{ border: `2px solid ${C.line2}` }} />
+        <div className="flex flex-col items-center gap-2">
+          <button onClick={() => fileRef.current?.click()} aria-label="Профайлын зураг солих"
+            className="relative active:scale-95" style={{ transition: "transform 150ms ease" }}>
+            <img src={avatar} alt="" className="w-24 h-24 rounded-full object-cover"
+              style={{ border: `2px solid ${C.line2}` }} />
+            <span className="absolute bottom-0 right-0 w-8 h-8 rounded-full flex items-center justify-center"
+              style={{ background: C.peachDeep, border: `2.5px solid ${C.card}` }}>
+              <Camera size={15} strokeWidth={2.4} color="#fff" />
+            </span>
+          </button>
           <button onClick={() => fileRef.current?.click()}
-            className="text-[12px] font-extrabold flex items-center gap-1.5 active:scale-95"
+            className="text-[12px] font-extrabold active:scale-95"
             style={{ color: C.peachDeep, transition: "transform 150ms ease" }}>
-            <Upload size={14} strokeWidth={2.6} /> Өөрийн зураг оруулах
+            Зураг солих
           </button>
           {uploadErr && (
             <div className="text-[11.5px] font-bold leading-snug text-center" style={{ color: C.peachDeep }}>{uploadErr}</div>
           )}
           <input ref={fileRef} type="file" accept="image/*" onChange={onUpload} className="hidden" />
-        </div>
-        <div className="text-[11.5px] font-bold mb-2" style={{ color: C.inkSoft }}>Эсвэл бэлэн зургаас сонгох</div>
-        <div className="grid grid-cols-4 gap-2">
-          {AVATARS.map((src, i) => (
-            <button key={i} onClick={() => setAvatar(src)}
-              className="rounded-2xl overflow-hidden active:scale-95"
-              style={{ border: `2px solid ${avatar === src ? C.peachDeep : C.line}`, transition: "transform 150ms ease" }}>
-              <img src={src} alt="" className="w-full aspect-square object-cover" />
-            </button>
-          ))}
         </div>
       </Card>
 
