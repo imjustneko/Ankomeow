@@ -7,10 +7,11 @@ import { CHAT_ROOM, auth, blobDoc, db, messageDoc, messagesCol, savedItemDoc, st
 import { addDoc, deleteDoc, doc, getDoc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { DRAW_CHECKER } from "../lib/drawing.js";
 import { notifyPartner } from "../push.js";
-import { Bookmark, BookmarkCheck, Brush, Check, CheckCheck, Copy, Heart, Image as ImageIcon, MapPin, Mic, Plus, Reply, Send, Sticker, Trash2, X } from "lucide-react";
-import { MessageBody, chatTime, copyableText, durText, loadBlob, messagePreview, putBlob, savedSnapshot, writeClipboard } from "../ui/message.jsx";
+import { Bookmark, BookmarkCheck, Brush, Check, Copy, Heart, Image as ImageIcon, MapPin, Mic, Plus, Reply, Send, Sticker, Trash2, X } from "lucide-react";
+import { MessageBody, copyableText, durText, loadBlob, messagePreview, putBlob, savedSnapshot, writeClipboard } from "../ui/message.jsx";
 import { DrawPad, DrawingView } from "../ui/drawing.jsx";
-import { pad } from "../lib/time.js";
+import { chatStamp, ubDayOf } from "../lib/time.js";
+import { groupMessages } from "../lib/chatGroup.js";
 import { compressImage } from "../lib/image.js";
 import { QUICK_REACTIONS, REACTIONS, REACTION_GIFS } from "../lib/reactions.js";
 
@@ -306,13 +307,13 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
     <div className="flex-1 flex flex-col min-h-0">
       <Header title="Чат" sub="Хайртай хүнтэйгээ шууд бичих" onBack={onBack} />
 
-      <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-2 mb-3">
+      <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain mb-3">
         {messages.length === 0 ? (
           <p className="text-[12px] py-8 text-center font-medium" style={{ color: C.inkSoft }}>
             Одоогоор мессеж алга. Эхний мессежээ бичээрэй.
           </p>
         ) : (
-          messages.map((m) => {
+          groupMessages(messages, ubDayOf).map(({ m, stamp, groupStart, groupEnd }) => {
             const mine = m.sender === accountKey;
             const draw = m.type === "drawing";
             /* Зурсан зураг ба "санаж байна" хоёр бөмбөлөггүй хөвнө —
@@ -322,9 +323,20 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
             const seen = mine && m.createdAt && partnerSeenAt && m.createdAt.toMillis() <= partnerSeenAt.toMillis();
             const myReaction = m.reactions?.[accountKey];
             const reactionList = Object.values(m.reactions || {});
+            /* Бүлгийн дотоод булангууд нийлж, нэг урт бөмбөлөг мэт харагдана.
+               Бөмбөлөггүй зурвасууд (зурсан зураг, "санаж байна") үүнээс гадуур. */
+            const merge = bare ? null : mine
+              ? { borderTopRightRadius: groupStart ? 18 : 6, borderBottomRightRadius: groupEnd ? 18 : 6 }
+              : { borderTopLeftRadius: groupStart ? 18 : 6, borderBottomLeftRadius: groupEnd ? 18 : 6 };
             return (
-              <div key={m.id} className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
-                {!mine && m.senderName && (
+              <div key={m.id} className={`flex flex-col ${mine ? "items-end" : "items-start"}`}
+                style={{ marginTop: groupStart ? 8 : 2 }}>
+                {stamp && m.createdAt?.toDate && (
+                  <div className="w-full text-center text-[10px] font-bold py-3" style={{ color: C.inkSoft }}>
+                    {chatStamp(m.createdAt.toDate())}
+                  </div>
+                )}
+                {!mine && groupStart && m.senderName && (
                   <div className="text-[9.5px] font-bold mb-1 px-1" style={{ color: C.inkSoft }}>{m.senderName}</div>
                 )}
                 <div
@@ -341,6 +353,7 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
                         background: mine ? C.lilacDeep : C.card, color: mine ? "#fff" : C.ink,
                         border: mine ? "none" : `1.5px solid ${C.line}`,
                       }),
+                    ...(merge || {}),
                     ...(flashId === m.id ? { outline: `2.5px solid ${C.gold}`, outlineOffset: 2 } : {}),
                     transition: "outline-color 300ms ease",
                   }}>
@@ -358,6 +371,13 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
                   )}
                   <MessageBody m={m} mine={mine} />
                 </div>
+
+                {/* Зурвас бүрийн доор цаг бичихийг больсон тул дарахад л харуулна */}
+                {reactingTo === m.id && m.createdAt?.toDate && (
+                  <div className="text-[9.5px] font-bold mt-1 px-1" style={{ color: C.inkSoft }}>
+                    {chatStamp(m.createdAt.toDate())}
+                  </div>
+                )}
 
                 {reactingTo === m.id && (
                   <div className="flex items-center gap-1 mt-1 px-1.5 py-1 rounded-full" style={{ background: C.card, border: `1.5px solid ${C.line}` }}>
@@ -421,14 +441,12 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
                   </div>
                 )}
 
-                <div className="flex items-center gap-1 mt-1 px-1" style={{ color: C.inkSoft }}>
-                  <span className="text-[9.5px] font-semibold">{chatTime(m.createdAt)}</span>
-                  {m.id === lastMineId && (
-                    seen
-                      ? <CheckCheck size={11} strokeWidth={2.4} color={C.waterDeep} />
-                      : <Check size={11} strokeWidth={2.4} />
-                  )}
-                </div>
+                {/* Уншсан төлөв зөвхөн өөрийн сүүлийн зурвасын доор — Instagram шиг */}
+                {m.id === lastMineId && (
+                  <div className="text-[9.5px] font-bold mt-1 px-1" style={{ color: C.inkSoft }}>
+                    {seen ? "Үзсэн" : "Илгээгдсэн"}
+                  </div>
+                )}
               </div>
             );
           })
