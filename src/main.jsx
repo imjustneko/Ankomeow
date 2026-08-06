@@ -25,7 +25,24 @@ const reloadOnce = () => {
   window.location.reload();
 };
 
-if ("serviceWorker" in navigator) {
+/* ── Dev дээр service worker БҮРТГЭХГҮЙ ──
+   sw.js нь ижил эхээс ирсэн бүх GET-ийг cache-first-ээр барьдаг. Production-д
+   энэ нь зөв (файлууд hash-тай, шинэ build бүрд кэшийн нэр солигдоно), гэтэл
+   dev дээр кэшийн нэр үргэлж "ankomeow-dev" бөгөөд эх файлуудын зам
+   өөрчлөгддөггүй тул нэг л удаа кэшлэгдээд МӨНХӨД хуучин хувилбар өгдөг.
+   Үр дүнд нь эх код өөрчлөгдсөн ч хөтөч хуучныг ачаалж, экспорт олдохгүй
+   болоод цагаан дэлгэц гардаг байв.
+
+   Мөн өмнө нь бүртгэгдчихсэн worker-ийг ИДЭВХТЭЙ устгана — эс бөгөөс кодыг
+   зассан ч тухайн хөтөч дээр хуучин worker үргэлжлүүлэн ажиллаж, ижил
+   асуудал давтагдана. */
+if (import.meta.env.DEV) {
+  navigator.serviceWorker?.getRegistrations?.()
+    .then((rs) => Promise.all(rs.map((r) => r.unregister())))
+    .then(() => window.caches?.keys?.())
+    .then((keys) => Promise.all((keys || []).map((k) => caches.delete(k))))
+    .catch(() => {});
+} else if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     /* updateViaCache:"none" — GitHub Pages нь sw.js-ийг max-age=600-аар өгдөг тул
        хөтөч хуучин хуулбарыг ашиглахаас сэргийлнэ. */
