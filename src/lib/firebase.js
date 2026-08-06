@@ -77,4 +77,6 @@ export const stickersCol = (accountKey) => collection(db, "rooms", CHAT_ROOM, "s
 export const stickerDoc = (accountKey, id) => doc(db, "rooms", CHAT_ROOM, "stickers", accountKey, "items", id);
 /* Чатын зурвасууд */
 export const messagesCol = () => collection(db, "rooms", CHAT_ROOM, "messages");
+/* Товлосон зурвас — ирээдүйд хүргэгдэнэ (lib/scheduled.js, hooks/useScheduledDelivery.js) */
+export const scheduledCol = () => collection(db, "rooms", CHAT_ROOM, "scheduled");
 export const messageDoc = (id) => doc(db, "rooms", CHAT_ROOM, "messages", id);
