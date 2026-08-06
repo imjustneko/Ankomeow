@@ -683,7 +683,9 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
                   /* `relative` — хариултын дүрс absolute тул байрлуулаагүй
                      элементийн ДЭЭР зурагддаг. Бөмбөлгийг ч байрлуулснаар DOM
                      дараалал шийднэ: бөмбөлөг сүүлд байгаа тул дүрсийг далдална. */
-                  className={`relative w-fit text-[13px] font-semibold cursor-pointer ${isMedia && !m.replyTo ? "p-1.5" : "px-3.5 py-2.5"}`}
+                  /* chat-bubble — iOS дээр текст сонголтыг хааж, урт дарах
+                     дохиог сонголтын томруулагчид булаалгахгүй (ios.css) */
+                  className={`chat-bubble relative w-fit text-[13px] font-semibold cursor-pointer ${isMedia && !m.replyTo ? "p-1.5" : "px-3.5 py-2.5"}`}
                   style={{
                     ...g.style,
                     ...(bare
