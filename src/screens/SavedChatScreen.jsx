@@ -6,7 +6,8 @@ import { Card, Header } from "../ui/primitives.jsx";
 import { blobDoc, savedItemDoc, savedItemsCol } from "../lib/firebase.js";
 import { deleteDoc, onSnapshot, orderBy, query } from "firebase/firestore";
 import { Check, Copy, Trash2 } from "lucide-react";
-import { MessageBody, chatTime, copyableText, writeClipboard } from "../ui/message.jsx";
+import { MessageBody, copyableText, writeClipboard } from "../ui/message.jsx";
+import { chatTime } from "../lib/time.js";
 
 /* ── Хадгалсан чат ── */
 export function SavedChatScreen({ accountKey, onBack }) {

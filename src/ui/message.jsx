@@ -11,15 +11,6 @@ import { C } from "../lib/theme.js";
 import { blobsCol, blobDoc } from "../lib/firebase.js";
 import { DrawingView } from "./drawing.jsx";
 import { MapView } from "../screens/MapScreens.jsx";
-import { TZ } from "../lib/time.js";
-
-
-export const chatTime = (ts) => {
-  if (!ts?.toDate) return "";
-  const p = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(ts.toDate());
-  const g = (t) => p.find((x) => x.type === t)?.value ?? "00";
-  return `${g("hour")}:${g("minute")}`;
-};
 
 /* Нэг blob-ыг хоёр удаа татахгүйн тулд санах ойд кэшлэнэ.
    Зэрэг хүсэлтийг ч нэгтгэнэ (нэг зураг хоёр газар харагдаж болно). */
