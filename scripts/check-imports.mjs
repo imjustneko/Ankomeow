@@ -16,7 +16,9 @@ const EXTRA = ["tovlorokh-khamtrakh.jsx"];
 
 /* Функцийн параметр, локал хувьсагчийг дээд түвшний нэртэй андуурч болзошгүй
    тул мэдэгдэж байгаа хуурамч дохиог алгасна. */
-const IGNORE = new Set(["auth", "fbApp", "isIOS", "isStandalone"]);
+/* `pad` нь className дотор ("safe-bottom-pad") үгийн зааг үүсгэдэг тул
+   импортгүй файлыг ч буруутгадаг. */
+const IGNORE = new Set(["auth", "fbApp", "isIOS", "isStandalone", "pad"]);
 
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
