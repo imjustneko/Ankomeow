@@ -9,7 +9,7 @@
    Ажиллуулах: npm run check   (эсвэл npm run build дотор автоматаар) */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, normalize } from "node:path";
 
 const ROOTS = ["src"];
 const EXTRA = ["tovlorokh-khamtrakh.jsx"];
@@ -55,6 +55,35 @@ const imported = (s) => {
   return out;
 };
 
+/* Модулиас ГАДАГШ гаргаж буй нэрс — `export const X`, `export function X`,
+   `export class X`, мөн `export { a, b as c }`. */
+const exported = (s) => {
+  const out = new Set();
+  for (const m of s.matchAll(/^export\s+(?:async\s+)?(?:function|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gm)) {
+    out.add(m[1]);
+  }
+  for (const m of s.matchAll(/^export\s*\{([^}]*)\}/gm)) {
+    for (const part of m[1].split(",")) {
+      const n = part.trim();
+      if (n) out.add(n.split(/\s+as\s+/).pop().trim());
+    }
+  }
+  return out;
+};
+
+/* `import { a, b as c } from "./x.js"` мөрүүдийг задлана (зөвхөн харьцангуй зам) */
+const relImports = (s) => {
+  const out = [];
+  /* `[^{}]` — хаалтын доторх агуулга нь хаагдах хаалтыг давж чадахгүй.
+     Ердийн `[\s\S]*?` бол `} from "react"`-ыг алгасч, дараагийн import руу
+     үсэрч, "react"-ийн нэрсийг харьцангуй модулийнх гэж андуурч байв. */
+  for (const m of s.matchAll(/import\s*\{([^{}]*?)\}\s*from\s*["'](\.[^"']*)["']/g)) {
+    const names = m[1].split(",").map((p) => p.trim().split(/\s+as\s+/)[0].trim()).filter(Boolean);
+    out.push({ names, spec: m[2] });
+  }
+  return out;
+};
+
 const files = [...ROOTS.flatMap((r) => walk(r)), ...EXTRA];
 const src = new Map(files.map((f) => [f, readFileSync(f, "utf8")]));
 
@@ -65,6 +94,29 @@ for (const [f, s] of src) {
 }
 
 let bad = 0;
+
+/* Импортолсон нэр тэр модульд ҮНЭХЭЭР байгаа эсэх.
+
+   Дээрх шалгалтууд нь "импорт дутуу"-г л барьдаг. Гэтэл нэрийг өөр модуль руу
+   ЗӨӨХӨД хуучин импорт нь үлддэг — `vite build` үүнийг зөвхөн сануулга болгож
+   өнгөрөөдөг тул алдаа нь хөтөч дээр цагаан дэлгэц болж гарна. `chatTime`-ыг
+   ui/message.jsx-ээс lib/time.js руу зөөхөд яг ингэж эвдэрсэн. */
+for (const [f, s] of src) {
+  const dir = dirname(f);
+  const missing = [];
+  for (const { names, spec } of relImports(s)) {
+    const target = normalize(join(dir, spec));
+    const t = src.get(target);
+    if (!t) continue; /* энэ шалгалтын хамрах хүрээнээс гадуурх файл */
+    const has = exported(t);
+    for (const n of names) if (!has.has(n)) missing.push(`${n} (${target})`);
+  }
+  if (missing.length) {
+    bad++;
+    console.error(`✗ ${f}\n    байхгүй экспортыг импортолсон: ${missing.join(", ")}`);
+  }
+}
+
 for (const [f, s] of src) {
   const have = new Set([...declared(s), ...imported(s)]);
   const body = stripComments(s);
