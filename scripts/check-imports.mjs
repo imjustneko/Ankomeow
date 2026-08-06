@@ -16,9 +16,13 @@ const EXTRA = ["tovlorokh-khamtrakh.jsx"];
 
 /* Функцийн параметр, локал хувьсагчийг дээд түвшний нэртэй андуурч болзошгүй
    тул мэдэгдэж байгаа хуурамч дохиог алгасна. */
-/* `pad` нь className дотор ("safe-bottom-pad") үгийн зааг үүсгэдэг тул
-   импортгүй файлыг ч буруутгадаг. */
-const IGNORE = new Set(["auth", "fbApp", "isIOS", "isStandalone", "pad"]);
+const IGNORE = new Set(["auth", "fbApp", "isIOS", "isStandalone"]);
+
+/* Нэрийг ГАНЦААР нь олох загвар.
+   Энгийн `\b` нь зурааст нэрийн дотроос ч олдог: className="safe-bottom-pad"
+   доторх "pad" нь `\bpad\b`-д тохирч, `pad`-ыг импортлоогүй файлыг худал
+   буруутгадаг байв. Тиймээс зураасыг ч үсэгтэй адилтган зааг гэж үзэхгүй. */
+const alone = (n) => new RegExp(`(?<![-\\w$])${n.replace(/\$/g, "\\$")}(?![-\\w$])`);
 
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
@@ -66,7 +70,7 @@ for (const [f, s] of src) {
   const body = stripComments(s);
   const missing = [...owner]
     .filter(([n, from]) => from !== f && !have.has(n) && !IGNORE.has(n)
-      && new RegExp(`\\b${n.replace(/\$/g, "\\$")}\\b`).test(body))
+      && alone(n).test(body))
     .map(([n, from]) => `${n} (${from})`);
   if (missing.length) {
     bad++;
