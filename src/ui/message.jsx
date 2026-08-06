@@ -4,7 +4,7 @@
    хэвтэнэ. Чат нь сүүлийн 100 зурвасыг бүтнээр татдаг тул энэ нь чат нээгдэх
    хурдыг шийддэг. */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { addDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { Image as ImageIcon, MapPin, Pause, Play } from "lucide-react";
 import { C } from "../lib/theme.js";
@@ -13,6 +13,8 @@ import { DrawingView } from "./drawing.jsx";
 import { Lightbox } from "./lightbox.jsx";
 import { MapView } from "../screens/MapScreens.jsx";
 import { BIG_EMOJI_SIZE, bigEmoji } from "../lib/emoji.js";
+import { waveBars } from "../lib/waveform.js";
+import { IMG_MAX_H, imageBox } from "../lib/imageBox.js";
 
 /* Нэг blob-ыг хоёр удаа татахгүйн тулд санах ойд кэшлэнэ.
    Зэрэг хүсэлтийг ч нэгтгэнэ (нэг зураг хоёр газар харагдаж болно). */
@@ -53,7 +55,7 @@ export function useBlob(id, inline) {
   return data;
 }
 
-export const SAVED_FIELDS = ["text", "label", "key", "gifUrl", "image", "blobId", "dur", "strokes", "lat", "lng", "count"];
+export const SAVED_FIELDS = ["text", "label", "key", "gifUrl", "image", "blobId", "dur", "strokes", "lat", "lng", "count", "w", "h"];
 export const savedSnapshot = (m) => {
   const out = {
     type: m.type,
@@ -96,32 +98,40 @@ export const writeClipboard = async (t) => {
 
    Төлөвийг энд барьсны учир нь чат ба хадгалсан чат хоёулаа ижилхэн ажиллах
    ёстой — эцэг дэлгэц бүрд давхардуулж утаслах шаардлагагүй. */
-export function ZoomableImage({ src, alt = "", maxHeight = 220 }) {
+export function ZoomableImage({ src, alt = "", maxHeight = IMG_MAX_H, box }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       {/* stopPropagation — эс бөгөөс бөмбөлгийн реакцийн цэс ч зэрэг нээгдэнэ */}
       <img src={src} alt={alt} onClick={(e) => { e.stopPropagation(); setOpen(true); }}
-        className="rounded-[14px] max-w-full block cursor-zoom-in" style={{ maxHeight }} />
+        className="rounded-[14px] max-w-full block cursor-zoom-in"
+        style={box ? { width: box.width, aspectRatio: box.aspectRatio } : { maxHeight }} />
       {open && <Lightbox src={src} alt={alt} onClose={() => setOpen(false)} />}
     </>
   );
 }
 
-/* Хавсаргасан зураг. m.image нь хуучин зурвасуудын нийцтэй байдлын төлөө. */
+/* Хавсаргасан зураг. m.image нь хуучин зурвасуудын нийцтэй байдлын төлөө.
+
+   m.w/m.h байвал орлуулагч нь ЯГ зургийн хэмжээгээр орон зай эзэлнэ — ингэснээр
+   зураг ирэхэд чат үсрэхгүй. Хуучин зурвасуудад хэмжээ байхгүй тул тогтмол
+   орлуулагч руу ухарна. */
 export function ChatImage({ m }) {
   const src = useBlob(m.blobId, m.image);
+  const box = imageBox(m.w, m.h);
 
   if (!src) {
     return (
-      <div className="rounded-[14px] flex items-center justify-center"
-        style={{ width: 180, height: 130, background: C.cardIn }}>
+      <div className="rounded-[14px] flex items-center justify-center max-w-full"
+        style={box
+          ? { width: box.width, aspectRatio: box.aspectRatio, background: C.cardIn }
+          : { width: 180, height: 130, background: C.cardIn }}>
         <ImageIcon size={22} strokeWidth={2} style={{ color: C.inkSoft, opacity: 0.6 }} />
       </div>
     );
   }
 
-  return <ZoomableImage src={src} />;
+  return <ZoomableImage src={src} box={box} />;
 }
 
 export const durText = (s) => `${Math.floor((s || 0) / 60)}:${String(Math.round(s || 0) % 60).padStart(2, "0")}`;
@@ -134,6 +144,9 @@ export function VoiceBubble({ m, mine }) {
   const [pos, setPos] = useState(0);
   const total = m.dur || 0;
   const tone = mine ? "#fff" : C.lilacDeep;
+  /* useMemo — жагсаалт дахин зурагдах бүрд (бичих товч бүрд) дахин тооцохгүй */
+  const bars = useMemo(() => waveBars(m.blobId || m.id), [m.blobId, m.id]);
+  const progress = total ? Math.min(1, pos / total) : 0;
 
   const toggle = (e) => {
     e.stopPropagation(); /* бөмбөлгийн реакц цэсийг нээхгүй */
@@ -154,11 +167,23 @@ export function VoiceBubble({ m, mine }) {
         {playing ? <Pause size={16} strokeWidth={2.6} /> : <Play size={16} strokeWidth={2.6} />}
       </button>
       <div className="flex-1 min-w-0">
-        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: mine ? "rgba(255,255,255,.3)" : C.cardIn }}>
-          <div className="h-full rounded-full"
-            style={{ width: `${total ? Math.min(100, (pos / total) * 100) : 0}%`, background: tone, transition: "width 120ms linear" }} />
+        {/* Долгион — тоглосон хэсэг нь бүтэн өнгөтэй, үлдсэн нь бүдэг.
+            Долгионы дүрс нь зурвасын id-аас гардаг тул дахин зурагдахад үсрэхгүй. */}
+        <div className="flex items-center gap-[2px] h-6" onClick={toggle}>
+          {bars.map((h, i) => {
+            const done = progress * bars.length > i;
+            return (
+              <span key={i} className="flex-1 rounded-full"
+                style={{
+                  height: `${Math.round(h * 100)}%`,
+                  minHeight: 3,
+                  background: done ? tone : (mine ? "rgba(255,255,255,.38)" : C.cardIn),
+                  transition: "background 120ms linear",
+                }} />
+            );
+          })}
         </div>
-        <div className="text-[10px] font-bold mt-1" style={{ color: mine ? "rgba(255,255,255,.85)" : C.inkSoft }}>
+        <div className="text-[10px] font-bold mt-0.5" style={{ color: mine ? "rgba(255,255,255,.85)" : C.inkSoft }}>
           {durText(playing || pos ? pos : total)}
         </div>
       </div>
@@ -222,12 +247,9 @@ export function MessageBody({ m, mine }) {
       {m.type === "image" && <ChatImage m={m} />}
       {m.type === "voice" && <VoiceBubble m={m} mine={mine} />}
       {m.type === "drawing" && <div style={{ width: 190, maxWidth: "100%" }}><DrawingView strokes={m.strokes} /></div>}
-      {m.type === "reaction" && m.gifUrl && (
-        <div>
-          <ZoomableImage src={m.gifUrl} alt={m.label} maxHeight={180} />
-          <div className="italic text-[11px] px-1 pt-1">{m.label}</div>
-        </div>
-      )}
+      {/* GIF өөрөө юу болохыг хэлж байхад доор нь дахин бичих нь илүүц.
+          Шошго нь мэдэгдэлд (messagePreview) хэвээр үлдэнэ. */}
+      {m.type === "reaction" && m.gifUrl && <ZoomableImage src={m.gifUrl} alt={m.label} maxHeight={180} />}
       {m.type === "reaction" && !m.gifUrl && <span className="italic">*{m.label}*</span>}
       {m.type === "location" && <MapView lat={m.lat} lng={m.lng} />}
       {m.type === "miss" && <MissBubble count={m.count} />}
