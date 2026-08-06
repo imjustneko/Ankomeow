@@ -32,7 +32,7 @@ import {
   IC_DATES, IC_CALENDAR, IC_QUESTION, IC_WISH, IC_MAP, IC_LOCATION,
 } from "./src/lib/assets.js";
 import { TZ, ubDay, ubParts, pad, DAYS } from "./src/lib/time.js";
-import { compressImage, compressDataUrl } from "./src/lib/image.js";
+import { compressImage, compressDataUrl, imageDims } from "./src/lib/image.js";
 import { REACTIONS, REACTION_GIFS, QUICK_REACTIONS } from "./src/lib/reactions.js";
 import {
   loadBlob, putBlob, useBlob, savedSnapshot, copyableText, writeClipboard,
@@ -474,7 +474,7 @@ function ToolGrid({ go }) {
   );
 }
 
-function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justReset, avatar, profileName, screenApps, appMin, partner, partnerName, partnerStatus, partnerSong, partnerUnseen, partnerOnline, onMiss, onCare, onMood, myMood, partnerMood, myStatus, mySong, coupleInfo, day, streak, nextEvent, accountKey, partnerKey, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
+function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justReset, avatar, profileName, screenApps, appMin, partner, partnerName, partnerStatus, partnerSong, partnerUnseen, partnerOnline, onMiss, onMissAttach, onCare, onMood, myMood, partnerMood, myStatus, mySong, coupleInfo, day, streak, nextEvent, accountKey, partnerKey, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
   const now = new Date();
   const greet = (clock.h < 11 ? "Өглөөний мэнд" : clock.h < 18 ? "Өдрийн мэнд" : "Оройн мэнд") + (profileName ? `, ${profileName}` : "");
   const left = 86400 - (clock.h * 3600 + clock.m * 60 + clock.s);
@@ -593,7 +593,7 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
 
           {/* Карт өөрөө дардаг тул товчны дарагдалт дээш нэвчихгүй байх ёстой */}
           <div className="mt-3" onClick={(e) => e.stopPropagation()}>
-            <MissButton onSend={onMiss} />
+            <MissButton onSend={onMiss} onAttach={onMissAttach} />
           </div>
         </Card>
       ) : partnerName ? (
@@ -1169,9 +1169,9 @@ export default function App() {
 
   /* "Санаж байна" — товшилттой нэг сувгаар явна, зөвхөн kind-ээр ялгагдана.
      Суллахад нэг л бичилт: барьсан хугацаанаас гарсан тоог increment хийнэ. */
-  const sendMiss = (n) => {
+  const sendMiss = (n, extra = {}) => {
     if (!partnerKey || !accountKey) return;
-    const payload = { type: "miss", count: n };
+    const payload = { type: "miss", count: n, ...extra };
 
     /* Чатанд үлдэнэ — хожим эргэж хараад дурсах ул мөр. */
     addDoc(messagesCol(), {
@@ -1191,6 +1191,35 @@ export default function App() {
       tag: "chat",
       tab: "chat",
     });
+  };
+
+  /* "Санаж байна"-д шалтгаан хавсаргах — зураг эсвэл байршил.
+     Зөвхөн тоо илгээхээс дулаан: юунаас болж санасныг харуулна. */
+  const missFileRef = useRef(null);
+  const missWithPlace = () => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (p) => sendMiss(1, { lat: p.coords.latitude, lng: p.coords.longitude }),
+      () => {}
+    );
+  };
+
+  const missWithPhoto = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const dataUrl = await compressImage(file, 900, 0.6);
+      if (dataUrl.length > 900000) return;
+      const dims = await imageDims(dataUrl);
+      const blobId = await putBlob(dataUrl, "image");
+      sendMiss(1, { blobId, ...(dims || {}) });
+    } catch {}
+  };
+
+  const onMissAttach = (kind) => {
+    if (kind === "place") missWithPlace();
+    else missFileRef.current?.click();
   };
 
   /* Халамжийн зөвлөмжийг чат руу зурвас болгож илгээнэ. Тусдаа суваг
@@ -1618,7 +1647,10 @@ export default function App() {
                 </div>
               )}
               <div key={tab} className={`${navDir === "back" ? "scr-back" : "scr-in"} ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
-                {tab === "home" && <HomeScreen go={go} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} partnerStatus={partnerStatus} partnerSong={partnerSong} partnerUnseen={partnerUnseen} partnerOnline={partnerOnline} onMiss={sendMiss} onCare={sendCare} onMood={setMood} myMood={myMood} partnerMood={partnerMood} myStatus={myStatus} mySong={mySong} coupleInfo={coupleInfo} day={day} streak={streak} nextEvent={nextEvent} accountKey={accountKey} partnerKey={partnerKey} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} chatUnread={chatUnread} />}
+                {tab === "home" && <HomeScreen go={go} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} partnerStatus={partnerStatus} partnerSong={partnerSong} partnerUnseen={partnerUnseen} partnerOnline={partnerOnline} onMiss={sendMiss} onMissAttach={onMissAttach} onCare={sendCare} onMood={setMood} myMood={myMood} partnerMood={partnerMood} myStatus={myStatus} mySong={mySong} coupleInfo={coupleInfo} day={day} streak={streak} nextEvent={nextEvent} accountKey={accountKey} partnerKey={partnerKey} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} chatUnread={chatUnread} />}
+                {/* "Санаж байна"-д зураг хавсаргах — нуугдмал файл сонгогч.
+                    Дэлгэц солигдоход алга болохгүйн тулд эндээ байрлана. */}
+                <input ref={missFileRef} type="file" accept="image/*" onChange={missWithPhoto} className="hidden" />
                 {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "list" && <ListScreen items={items} setItems={setItems} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "screen" && <ScreenTimeScreen {...{ screenApps, screenHistory, appMin }} partner={partnerStats} onBack={() => go("home")} />}

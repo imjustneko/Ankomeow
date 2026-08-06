@@ -201,9 +201,13 @@ export function VoiceBubble({ m, mine }) {
    анхаарал сарниулах болно. */
 const MISS_MAX_HEARTS = 5;
 
-function MissBubble({ count }) {
-  const n = Math.max(1, Math.floor(Number(count) || 1));
+/* `m` бүтнээр өгөгддөг — "санаж байна"-д зураг эсвэл байршил хавсрагдаж
+   болно: юунаас болж санасныг харуулах нь зөвхөн тоо хэлэхээс дулаан. */
+function MissBubble({ m }) {
+  const n = Math.max(1, Math.floor(Number(m?.count) || 1));
   const hearts = Math.min(n, MISS_MAX_HEARTS);
+  const hasPhoto = !!(m?.blobId || m?.image);
+  const hasPlace = m?.lat != null && m?.lng != null;
 
   return (
     <div className="miss-card relative flex flex-col items-center gap-1.5 px-5 py-3.5 rounded-[22px]"
@@ -226,6 +230,14 @@ function MissBubble({ count }) {
       <span className="text-[13px] font-extrabold whitespace-nowrap" style={{ color: C.ink }}>
         {n > 1 ? `${n} удаа саналаа` : "Чамайг саналаа"}
       </span>
+
+      {/* Хавсралт байвал "яагаад санасан"-ыг харуулна */}
+      {(hasPhoto || hasPlace) && (
+        <div className="w-full mt-1" style={{ maxWidth: 190 }}>
+          {hasPhoto && <ChatImage m={m} />}
+          {hasPlace && !hasPhoto && <MapView lat={m.lat} lng={m.lng} />}
+        </div>
+      )}
     </div>
   );
 }
@@ -252,7 +264,7 @@ export function MessageBody({ m, mine }) {
       {m.type === "reaction" && m.gifUrl && <ZoomableImage src={m.gifUrl} alt={m.label} maxHeight={180} />}
       {m.type === "reaction" && !m.gifUrl && <span className="italic">*{m.label}*</span>}
       {m.type === "location" && <MapView lat={m.lat} lng={m.lng} />}
-      {m.type === "miss" && <MissBubble count={m.count} />}
+      {m.type === "miss" && <MissBubble m={m} />}
     </>
   );
 }
@@ -266,7 +278,13 @@ export function messagePreview(payload) {
     case "drawing": return "🎨 Зураг зурлаа";
     case "voice": return "🎤 Дуут зурвас илгээлээ";
     case "location": return "📍 Байршлаа илгээлээ";
-    case "miss": return payload.count > 1 ? `💗 ${payload.count} удаа саналаа` : "💗 Чамайг саналаа";
+    case "miss": {
+      const base = payload.count > 1 ? `💗 ${payload.count} удаа саналаа` : "💗 Чамайг саналаа";
+      /* Хавсралтыг мэдэгдэлд дурдана — нээх шалтгаан болно */
+      if (payload.blobId || payload.image) return `${base} · 📷`;
+      if (payload.lat != null) return `${base} · 📍`;
+      return base;
+    }
     default: return "Шинэ зурвас";
   }
 }
