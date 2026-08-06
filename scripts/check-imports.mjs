@@ -44,10 +44,32 @@ const stripComments = (s) =>
    гэж буруутгагдана. */
 const usageBody = (s) => stripComments(s).replace(/^\s*import\s[\s\S]*?from\s*["'][^"']*["'];?/gm, "");
 
+/* Дээд түвшний тодорхойлолтууд — "энэ нэр аль модулийнх вэ" гэдгийг тогтооно.
+   Мөрийн эхэнд байх шаардлага нь зориудынх: функц доторх түр хувьсагчийг
+   модулийн экспорт мэт бүртгэвэл нэрийн эзэн буруу тодорхойлогдоно. */
 const declared = (s) => {
   const out = new Set();
   const re = /^(?:export\s+)?(?:async\s+)?(?:function|const|let|var)\s+([A-Za-z_$][\w$]*)/gm;
   for (const m of s.matchAll(re)) out.add(m[1]);
+  return out;
+};
+
+/* ЭНЭ файлд ашиглах боломжтой бүх нэр — догол мөрт (функц доторх) тодорхойлолт,
+   функцийн параметрийг ч тооцно.
+
+   Яагаад хэрэгтэй вэ: өөр модульд `ms` гэсэн дээд түвшний нэр байхад энэ файлын
+   функц дотор `const ms = ...` байвал "импорт дутуу" гэсэн худал дохио өгдөг
+   байв. Локал хувьсагч нь тухайн нэрийг бүрэн далдалдаг тул импорт хэрэггүй. */
+const localNames = (s) => {
+  const out = new Set();
+  for (const m of s.matchAll(/(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/g)) out.add(m[1]);
+  /* Задалсан тодорхойлолт: const { a, b } = ... ба const [a, b] = ... */
+  for (const m of s.matchAll(/(?:const|let|var)\s*[[{]([^\]}]*)[\]}]\s*=/g)) {
+    for (const part of m[1].split(",")) {
+      const n = part.trim().split(":").pop().trim().replace(/^\.\.\./, "").split("=")[0].trim();
+      if (/^[A-Za-z_$][\w$]*$/.test(n)) out.add(n);
+    }
+  }
   return out;
 };
 
@@ -126,7 +148,7 @@ for (const [f, s] of src) {
 }
 
 for (const [f, s] of src) {
-  const have = new Set([...declared(s), ...imported(s)]);
+  const have = new Set([...localNames(s), ...imported(s)]);
   const body = usageBody(s);
   const missing = [...owner]
     .filter(([n, from]) => from !== f && !have.has(n) && !IGNORE.has(n)
