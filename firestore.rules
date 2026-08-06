@@ -26,6 +26,12 @@ service cloud.firestore {
       allow write: if isCouple() && key == myKey();
     }
 
+    /* "Бичиж байна" төлөв — reads-тэй ижил загвар: хос нь уншиж, эзэн нь бичнэ */
+    match /rooms/ankomeow-couple/typing/{key} {
+      allow read: if isCouple();
+      allow write: if isCouple() && key == myKey();
+    }
+
     match /rooms/ankomeow-couple/peeks/{key} {
       allow read: if isCouple() && key == myKey();
       allow write: if isCouple();
