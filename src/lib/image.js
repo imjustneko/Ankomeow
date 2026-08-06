@@ -1,5 +1,15 @@
 /* Зургийн шахалт — Firestore-ийн 1MB хязгаарт багтаахын тулд. */
 
+/* dataUrl-ийн бодит хэмжээ. Зурвастай хамт хадгалснаар хүлээн авагч тал нь
+   зураг ирэхээс ӨМНӨ байрыг нь барьж чадна — эс бөгөөс орлуулагчаас жинхэнэ
+   хэмжээ рүү үсрэхэд чат доошоо шилжинэ. */
+export const imageDims = (dataUrl) => new Promise((resolve) => {
+  const img = new Image();
+  img.onerror = () => resolve(null); /* хэмжээгүй ч зурвас илгээгдэх ёстой */
+  img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+  img.src = dataUrl;
+});
+
 export const compressImage = (file, maxDim, quality) => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.onerror = reject;
