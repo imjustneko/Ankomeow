@@ -10,7 +10,9 @@ import { Image as ImageIcon, MapPin, Pause, Play } from "lucide-react";
 import { C } from "../lib/theme.js";
 import { blobsCol, blobDoc } from "../lib/firebase.js";
 import { DrawingView } from "./drawing.jsx";
+import { Lightbox } from "./lightbox.jsx";
 import { MapView } from "../screens/MapScreens.jsx";
+import { BIG_EMOJI_SIZE, bigEmoji } from "../lib/emoji.js";
 
 /* Нэг blob-ыг хоёр удаа татахгүйн тулд санах ойд кэшлэнэ.
    Зэрэг хүсэлтийг ч нэгтгэнэ (нэг зураг хоёр газар харагдаж болно). */
@@ -90,9 +92,26 @@ export const writeClipboard = async (t) => {
   document.body.removeChild(ta);
 };
 
+/* Дархад бүтэн дэлгэцээр нээгддэг зураг.
+
+   Төлөвийг энд барьсны учир нь чат ба хадгалсан чат хоёулаа ижилхэн ажиллах
+   ёстой — эцэг дэлгэц бүрд давхардуулж утаслах шаардлагагүй. */
+export function ZoomableImage({ src, alt = "", maxHeight = 220 }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      {/* stopPropagation — эс бөгөөс бөмбөлгийн реакцийн цэс ч зэрэг нээгдэнэ */}
+      <img src={src} alt={alt} onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        className="rounded-[14px] max-w-full block cursor-zoom-in" style={{ maxHeight }} />
+      {open && <Lightbox src={src} alt={alt} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
 /* Хавсаргасан зураг. m.image нь хуучин зурвасуудын нийцтэй байдлын төлөө. */
 export function ChatImage({ m }) {
   const src = useBlob(m.blobId, m.image);
+
   if (!src) {
     return (
       <div className="rounded-[14px] flex items-center justify-center"
@@ -101,7 +120,8 @@ export function ChatImage({ m }) {
       </div>
     );
   }
-  return <img src={src} alt="" className="rounded-[14px] max-w-full block" style={{ maxHeight: 220 }} />;
+
+  return <ZoomableImage src={src} />;
 }
 
 export const durText = (s) => `${Math.floor((s || 0) / 60)}:${String(Math.round(s || 0) % 60).padStart(2, "0")}`;
@@ -185,16 +205,26 @@ function MissBubble({ count }) {
   );
 }
 
+/* Зөвхөн эможигоос бүтсэн богино зурвасыг том, бөмбөлөггүй харуулна.
+   Бөмбөлгийг нь ChatScreen хасдаг (`bare`); энд зөвхөн хэмжээг нь өсгөнө. */
+function TextBody({ text }) {
+  const big = bigEmoji(text);
+  if (!big) return text;
+  return (
+    <span style={{ fontSize: BIG_EMOJI_SIZE[big - 1], lineHeight: 1.15, letterSpacing: 1 }}>{text}</span>
+  );
+}
+
 export function MessageBody({ m, mine }) {
   return (
     <>
-      {m.type === "text" && m.text}
+      {m.type === "text" && <TextBody text={m.text} />}
       {m.type === "image" && <ChatImage m={m} />}
       {m.type === "voice" && <VoiceBubble m={m} mine={mine} />}
       {m.type === "drawing" && <div style={{ width: 190, maxWidth: "100%" }}><DrawingView strokes={m.strokes} /></div>}
       {m.type === "reaction" && m.gifUrl && (
         <div>
-          <img src={m.gifUrl} alt={m.label} className="rounded-[14px] max-w-full block" style={{ maxHeight: 180 }} />
+          <ZoomableImage src={m.gifUrl} alt={m.label} maxHeight={180} />
           <div className="italic text-[11px] px-1 pt-1">{m.label}</div>
         </div>
       )}
