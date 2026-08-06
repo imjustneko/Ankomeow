@@ -37,6 +37,22 @@ service cloud.firestore {
       allow write: if isCouple();
     }
 
+    /* Товлосон зурвас — ирээдүйд хүргэгдэнэ.
+       Устгах эрхийг хоёуланд нь өгнө: cron байхгүй тул хүргэлтийг аль нэгнийх
+       нь клиент гүйцэтгэнэ (транзакцаар давхардахгүй). */
+    match /rooms/ankomeow-couple/scheduled/{id} {
+      allow read: if isCouple();
+      allow create: if isCouple() && request.resource.data.from == myKey();
+      allow delete: if isCouple();
+    }
+
+    /* Мэндчилгээ — хамтрагч руугаа үлдээнэ, эзэн нь нээж хараад устгана.
+       peeks-тэй ижил загвар: бичихийг хос хоёулаа, унших нь зөвхөн эзэн. */
+    match /rooms/ankomeow-couple/greetings/{key} {
+      allow read: if isCouple() && key == myKey();
+      allow write: if isCouple();
+    }
+
     /* Chibi товшилт — хос бичиж, эзэн нь уншина (peeks-тэй ижил загвар) */
     match /rooms/ankomeow-couple/pokes/{key} {
       allow read: if isCouple() && key == myKey();

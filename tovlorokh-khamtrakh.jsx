@@ -25,6 +25,8 @@ import { MissButton } from "./src/ui/miss.jsx";
 import { MemoryCard } from "./src/ui/memoryCard.jsx";
 import { careHint } from "./src/lib/care.js";
 import { MOODS, moodReply, moodToday } from "./src/lib/mood.js";
+import { GreetingOverlay } from "./src/ui/greeting.jsx";
+import { useScheduledDelivery } from "./src/hooks/useScheduledDelivery.js";
 import {
   IMG, LOGO, IC_PROFILE, IC_TIME, IC_GIF, IC_HOME, IC_NOTE,
   BG_MAIN, GRAIN, WELCOME_HERO, NAV_HOME, NAV_WATER, NAV_CHAT,
@@ -1217,6 +1219,17 @@ export default function App() {
     } catch {}
   };
 
+  /* Товлосон зурвасыг хүргэнэ. Хос хоёулаа энэ hook-ийг ажиллуулдаг тул
+     аль нэг нь аппаа нээхэд хүрнэ — cron шаардлагагүй. Хүргэсэн хүн нь
+     хүлээн авагч талдаа мэдэгдэл явуулна. */
+  const onScheduledDelivered = useCallback((s) => {
+    if (!s?.to) return;
+    notifyPartner(auth, {
+      to: s.to, title: s.fromName || "", body: s.text, tag: "chat", tab: "chat",
+    });
+  }, []);
+  useScheduledDelivery(accountKey, onScheduledDelivered);
+
   const onMissAttach = (kind) => {
     if (kind === "place") missWithPlace();
     else missFileRef.current?.click();
@@ -1575,6 +1588,10 @@ export default function App() {
           <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#FEBC2E" }} />
           <span className="w-2.5 h-2.5 rounded-full" style={{ background: "#28C840" }} />
         </div>
+
+        {/* Хамтрагчийн үлдээсэн мэндчилгээ — бүтэн дэлгэцээр угтана.
+            splash дууссаны дараа л: угтах зураг ачаалалтын ард нуугдах ёсгүй. */}
+        {booted && user && accountKey && <GreetingOverlay accountKey={accountKey} />}
 
         {/* Хосын chibi — зөвхөн нэвтэрсэн, splash дууссан үед */}
         {booted && user && partnerKey && (

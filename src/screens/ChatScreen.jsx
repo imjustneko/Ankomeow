@@ -3,11 +3,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { C } from "../lib/theme.js";
 import { Header, Pill } from "../ui/primitives.jsx";
-import { CHAT_ROOM, auth, blobDoc, db, messageDoc, messagesCol, savedItemDoc, stickerDoc, stickersCol } from "../lib/firebase.js";
-import { addDoc, deleteDoc, doc, getDoc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
+import { CHAT_ROOM, auth, blobDoc, db, messageDoc, messagesCol, savedItemDoc, scheduledCol, stickerDoc, stickersCol } from "../lib/firebase.js";
+import { Timestamp, addDoc, deleteDoc, doc, getDoc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { DRAW_CHECKER } from "../lib/drawing.js";
 import { notifyPartner } from "../push.js";
-import { Bookmark, BookmarkCheck, Brush, Check, ChevronDown, Copy, Heart, Image as ImageIcon, MapPin, Mic, Plus, Reply, Search, Send, Sticker, Trash2, X } from "lucide-react";
+import { Bookmark, BookmarkCheck, Brush, Check, ChevronDown, Copy, Heart, Image as ImageIcon, MapPin, Mic, Plus, Reply, Clock, Search, Send, Sticker, Sunrise, Trash2, X } from "lucide-react";
 import { MessageBody, copyableText, durText, loadBlob, messagePreview, putBlob, savedSnapshot, writeClipboard } from "../ui/message.jsx";
 import { DrawPad, DrawingView } from "../ui/drawing.jsx";
 import { chatStamp, ubDayOf } from "../lib/time.js";
@@ -18,11 +18,13 @@ import { seenUpToId } from "../lib/seen.js";
 import { searchMessages, snippet } from "../lib/chatSearch.js";
 import { mediaItems } from "../lib/media.js";
 import { MediaGrid } from "../ui/mediaGrid.jsx";
+import { greetingDoc } from "../ui/greeting.jsx";
 import { compressImage, imageDims } from "../lib/image.js";
 import { QUICK_REACTIONS, REACTIONS, REACTION_GIFS } from "../lib/reactions.js";
 import { reactionChips } from "../lib/reactionChips.js";
 import { useBubbleGestures } from "../hooks/useBubbleGestures.js";
 import { TYPING_STALE_MS, TYPING_STOP_MS, isTyping, shouldPing } from "../lib/typing.js";
+import { parseWhen, pending } from "../lib/scheduled.js";
 
 /* Бөмбөлгийн булангийн радиус. Бүлгийн дунд байгаа булан нь MERGED болж
    хумигдана — Instagram-ийн адил нэг урт бөмбөлөг мэт харагдуулна. */
@@ -76,6 +78,10 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
   const [showSearch, setShowSearch] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [showMedia, setShowMedia] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [schedText, setSchedText] = useState("");
+  const [schedWhen, setSchedWhen] = useState("");
+  const [scheduled, setScheduled] = useState([]);
   const burstSeq = useRef(0);
   const bubbleRefs = useRef(new Map());
   const [stickers, setStickers] = useState([]);
@@ -98,6 +104,29 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
     }, () => setLoadingOlder(false));
     return unsub;
   }, [pageSize]);
+
+  /* Товлосон зурвасууд — цуцлах, хүлээгдэж буйг харуулахад хэрэгтэй.
+     Хүргэлтийг өөрөө useScheduledDelivery (аппын үндэст) хариуцна. */
+  useEffect(() => {
+    const unsub = onSnapshot(scheduledCol(), (snap) => {
+      setScheduled(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    }, () => {});
+    return unsub;
+  }, []);
+
+  const waiting = pending(scheduled, Date.now());
+
+  const scheduleMessage = () => {
+    const t = schedText.trim();
+    const ms = parseWhen(schedWhen);
+    if (!t || !ms) return;
+    addDoc(scheduledCol(), {
+      from: accountKey, fromName: profileName, to: partnerKey,
+      text: t, at: Timestamp.fromMillis(ms), createdAt: serverTimestamp(),
+    }).catch(() => setSendError("Товлож чадсангүй. Firestore дүрмээ шалгана уу."));
+    setSchedText("");
+    setSchedWhen("");
+  };
 
   const loadOlder = () => {
     if (loadingOlder || !hasMore) return;
@@ -333,8 +362,23 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
     send({ type: "reaction", key: r.key, label: r.label, gifUrl: pick });
   };
 
+  /* Зурах самбар хоёр зорилгод үйлчилнэ: ердийн зурсан зураг, эсвэл
+     мэндчилгээ. Аль болохыг нээх мөчид тэмдэглэнэ. */
+  const [greetMode, setGreetMode] = useState(false);
+
   const sendDrawing = (strokes) => {
     setShowDraw(false);
+    if (greetMode) {
+      setGreetMode(false);
+      /* Чатын зурвас БИШ — хамтрагч аппаа нээхэд бүтэн дэлгэцээр угтана */
+      setDoc(greetingDoc(partnerKey), {
+        from: accountKey, fromName: profileName, strokes, at: serverTimestamp(),
+      }).catch(() => setSendError("Мэндчилгээг үлдээж чадсангүй."));
+      notifyPartner(auth, {
+        to: partnerKey, title: profileName, body: "🌅 Чамд мэндчилгээ үлдээлээ", tag: "greet", tab: "home",
+      });
+      return;
+    }
     send({ type: "drawing", strokes });
   };
 
@@ -813,7 +857,7 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
       )}
 
       {showDraw && (
-        <DrawPad stickers={stickers} onClose={() => setShowDraw(false)} onSend={sendDrawing}
+        <DrawPad stickers={stickers} onClose={() => { setShowDraw(false); setGreetMode(false); }} onSend={sendDrawing}
           onSaveSticker={saveSticker} onDeleteSticker={deleteSticker}
           onSendSticker={(s) => sendDrawing(s.strokes || [])} />
       )}
@@ -835,6 +879,10 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
               on: () => { setShowAttach(false); setShowDraw(false); setShowReact(true); } },
             { key: "voice", label: "Дуу хоолой", icon: <Mic size={18} strokeWidth={2.2} />, c: C.ink,
               on: startRec },
+            { key: "greet", label: "Мэндчилгээ", icon: <Sunrise size={18} strokeWidth={2.2} />, c: C.gold,
+              on: () => { setShowAttach(false); setShowReact(false); setGreetMode(true); setShowDraw(true); } },
+            { key: "later", label: "Дараа илгээх", icon: <Clock size={18} strokeWidth={2.2} />, c: C.waterDeep,
+              on: () => { setShowAttach(false); setShowReact(false); setShowSchedule(true); } },
           ].map((a) => (
             <button key={a.key} onClick={a.on} disabled={a.key === "img" && uploading}
               className="flex flex-col items-center gap-1 py-2 rounded-2xl active:scale-95 disabled:opacity-40"
@@ -845,6 +893,53 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
               <span className="text-[9.5px] font-extrabold" style={{ color: C.inkSoft }}>{a.label}</span>
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Товлосон зурвас — одоо бичээд ирээдүйд хүргэгдэнэ */}
+      {showSchedule && (
+        <div className="mb-2 rounded-2xl p-3" style={{ background: C.card, border: `1.6px solid ${C.line}` }}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11.5px] font-extrabold" style={{ color: C.ink }}>Дараа илгээх</span>
+            <button onClick={() => { setShowSchedule(false); setSchedText(""); setSchedWhen(""); }}
+              className="text-[11px] font-extrabold px-2 py-1" style={{ color: C.inkSoft }}>Хаах</button>
+          </div>
+
+          <input value={schedText} onChange={(e) => setSchedText(e.target.value)} placeholder="Юу гэж бичих вэ…"
+            className="w-full rounded-2xl px-3.5 py-2.5 text-[16px] font-medium outline-none mb-2"
+            style={{ background: C.cardIn, border: `1.5px solid ${C.line}`, color: C.ink }} />
+
+          <input type="datetime-local" value={schedWhen} onChange={(e) => setSchedWhen(e.target.value)}
+            className="w-full rounded-2xl px-3.5 py-2.5 text-[16px] font-medium outline-none mb-2"
+            style={{ background: C.cardIn, border: `1.5px solid ${C.line}`, color: C.ink }} />
+
+          <button onClick={scheduleMessage} disabled={!schedText.trim() || !parseWhen(schedWhen)}
+            className="w-full rounded-full py-2.5 text-[12.5px] font-extrabold active:scale-[0.98] disabled:opacity-40"
+            style={{ background: C.lilacDeep, color: "#fff", transition: "transform 120ms ease" }}>
+            Товлох
+          </button>
+
+          {/* Хүлээгдэж буй зурвасууд — товлочихоод мартах нь амархан */}
+          {waiting.length > 0 && (
+            <div className="mt-2.5">
+              {waiting.map((s) => (
+                <div key={s.id} className="flex items-center gap-2 rounded-xl px-2.5 py-1.5 mb-1"
+                  style={{ background: C.cardIn }}>
+                  <span className="text-[11px] font-semibold flex-1 min-w-0 truncate" style={{ color: C.ink }}>{s.text}</span>
+                  <span className="text-[9.5px] font-bold shrink-0" style={{ color: C.inkSoft }}>
+                    {s.at?.toDate ? chatStamp(s.at.toDate()) : ""}
+                  </span>
+                  {s.from === accountKey && (
+                    <button onClick={() => deleteDoc(doc(scheduledCol(), s.id)).catch(() => {})}
+                      aria-label="Товлолтыг цуцлах" className="shrink-0 active:scale-90"
+                      style={{ color: C.peachDeep, transition: "transform 120ms ease" }}>
+                      <X size={13} strokeWidth={2.6} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
