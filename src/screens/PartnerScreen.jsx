@@ -1,10 +1,10 @@
 /* Хамтрагчийн явц — зөвхөн харах. */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { C } from "../lib/theme.js";
 import { Bar, Card, Header } from "../ui/primitives.jsx";
-import { ACCOUNTS, CHAT_ROOM, auth, db } from "../lib/firebase.js";
-import { doc, serverTimestamp, setDoc } from "firebase/firestore";
+import { ACCOUNTS, CHAT_ROOM, auth, db, messagesCol } from "../lib/firebase.js";
+import { addDoc, doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { notifyPartner } from "../push.js";
 import { Check } from "lucide-react";
 import { IC_PROFILE } from "../lib/assets.js";
@@ -12,8 +12,20 @@ import { SongChip } from "../ui/song.jsx";
 import { PostGallery } from "../ui/posts.jsx";
 
 /* ── Хамтрагчийн явц (зөвхөн харах) ── */
-export function PartnerScreen({ partner, accountKey, partnerKey, partnerStatus, partnerSong, onSeen, onBack }) {
+export function PartnerScreen({ partner, accountKey, partnerKey, partnerStatus, partnerSong, profileName, onSeen, onBack }) {
   const items = partner?.items || [];
+  /* Аль ажлыг амласнаа санана — товч давтагдаж дарагдвал чат дүүрнэ */
+  const [taken, setTaken] = useState(() => new Set());
+
+  const takeOver = (it) => {
+    if (!partnerKey || !accountKey || taken.has(it.id)) return;
+    const text = `«${it.text}» — үүнийг би хийе 🤝`;
+    addDoc(messagesCol(), {
+      sender: accountKey, senderName: profileName, createdAt: serverTimestamp(), type: "text", text,
+    }).catch(() => {});
+    notifyPartner(auth, { to: partnerKey, title: profileName, body: text, tag: "chat", tab: "chat" });
+    setTaken((s) => new Set(s).add(it.id));
+  };
   const done = items.filter((i) => i.done).length;
   const stTotal = (partner?.screenApps || []).reduce((s, a) => s + a.min, 0) + (partner?.appMin || 0);
   const gifCount = (partner?.gifFrames || []).length;
@@ -90,9 +102,22 @@ export function PartnerScreen({ partner, accountKey, partnerKey, partnerStatus, 
                 style={{ border: `2px solid ${it.done ? C.sageDeep : C.line2}`, background: it.done ? C.sageDeep : "transparent" }}>
                 {it.done && <Check size={14} strokeWidth={3.2} color="#fff" />}
               </div>
-              <span className="flex-1 text-[14px] font-semibold" style={{
+              <span className="flex-1 text-[14px] font-semibold min-w-0" style={{
                 color: it.done ? C.inkSoft : C.ink, textDecoration: it.done ? "line-through" : "none",
               }}>{it.text}</span>
+
+              {/* Хийгээгүй ажлыг өөр дээрээ авах. Хамтрагчийн жагсаалтыг ШУУД
+                  өөрчлөх боломжгүй (Firestore дүрмээр эзэн нь л бичдэг) тул
+                  чат руу амлалт болгож илгээнэ — утга нь ч илүү зөв: халамж
+                  бол өгөгдлийн өөрчлөлт биш, хэлсэн үг. */}
+              {!it.done && (
+                <button onClick={() => takeOver(it)} disabled={taken.has(it.id)}
+                  className="shrink-0 rounded-full px-3 py-1.5 text-[10.5px] font-extrabold active:scale-95 disabled:opacity-50"
+                  style={{ background: taken.has(it.id) ? C.sage : C.cardIn,
+                    color: taken.has(it.id) ? "#fff" : C.sageDeep, transition: "transform 120ms ease" }}>
+                  {taken.has(it.id) ? "Амлалаа" : "Би хийе"}
+                </button>
+              )}
             </div>
           ))}
         </div>

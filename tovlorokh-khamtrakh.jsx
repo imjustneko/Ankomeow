@@ -24,6 +24,7 @@ import { StoryRow } from "./src/ui/story.jsx";
 import { MissButton } from "./src/ui/miss.jsx";
 import { MemoryCard } from "./src/ui/memoryCard.jsx";
 import { careHint } from "./src/lib/care.js";
+import { MOODS, moodReply, moodToday } from "./src/lib/mood.js";
 import {
   IMG, LOGO, IC_PROFILE, IC_TIME, IC_GIF, IC_HOME, IC_NOTE,
   BG_MAIN, GRAIN, WELCOME_HERO, NAV_HOME, NAV_WATER, NAV_CHAT,
@@ -473,7 +474,7 @@ function ToolGrid({ go }) {
   );
 }
 
-function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justReset, avatar, profileName, screenApps, appMin, partner, partnerName, partnerStatus, partnerSong, partnerUnseen, partnerOnline, onMiss, onCare, myStatus, mySong, coupleInfo, day, streak, nextEvent, accountKey, partnerKey, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
+function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justReset, avatar, profileName, screenApps, appMin, partner, partnerName, partnerStatus, partnerSong, partnerUnseen, partnerOnline, onMiss, onCare, onMood, myMood, partnerMood, myStatus, mySong, coupleInfo, day, streak, nextEvent, accountKey, partnerKey, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, onInstall, onDismissInstall, onApplyUpdate, pushState, pushBusy, pushError, pushDismissed, onEnablePush, onDismissPush }) {
   const now = new Date();
   const greet = (clock.h < 11 ? "Өглөөний мэнд" : clock.h < 18 ? "Өдрийн мэнд" : "Оройн мэнд") + (profileName ? `, ${profileName}` : "");
   const left = 86400 - (clock.h * 3600 + clock.m * 60 + clock.s);
@@ -483,6 +484,9 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
   const hint = careHint(partner, clock.h);
   const [hintSent, setHintSent] = useState(false);
   useEffect(() => setHintSent(false), [hint?.key]);
+
+  const [moodSent, setMoodSent] = useState(false);
+  useEffect(() => setMoodSent(false), [partnerMood?.key]);
 
   return (
     <div>
@@ -503,9 +507,28 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
         </button>
       </div>
 
+      {/* Өдрийн сэтгэл санаа — нэг товшилт. Урт статус бичих нь хүчин
+          чармайлт шаарддаг тул хоосон үлддэг; энэ нь өдөр бүр биелнэ. */}
+      <div className="mt-7 flex items-center gap-1.5">
+        <span className="text-[11px] font-bold shrink-0" style={{ color: C.inkSoft }}>Өнөөдөр яаж байна?</span>
+        <div className="flex gap-1 ml-auto">
+          {MOODS.map((m) => (
+            <button key={m.key} onClick={() => onMood?.(m.key)} aria-label={m.label}
+              className="w-8 h-8 rounded-full flex items-center justify-center text-[16px] active:scale-90"
+              style={{
+                background: myMood?.key === m.key ? C.lilacDeep : C.card,
+                border: `1.5px solid ${myMood?.key === m.key ? C.lilacDeep : C.line}`,
+                transition: "transform 120ms ease",
+              }}>
+              {m.emoji}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Хамтрагчийг хамгийн түрүүнд — скролл хийхээс өмнө нүдэнд өртөнө.
           mt-7 нь дээрх наалдмал толгойн сөрөг захаас үүсэх давхцлыг нөхнө. */}
-      <StoryRow className="mt-7 mb-4"
+      <StoryRow className="mt-3 mb-4"
         me={{ avatar, status: myStatus, song: mySong }}
         partner={{
           avatar: partner?.avatar, name: partnerName,
@@ -525,6 +548,23 @@ function HomeScreen({ go, ml, goal, items, gifCount, chatUnread, clock, justRese
             </div>
             <span className="text-[11.5px] font-bold shrink-0" style={{ color: C.peachDeep }}>Дэлгэрэнгүй →</span>
           </div>
+          {/* Сэтгэл санаа — муу байвал хариу үйлдэл санал болгоно. Зөвхөн
+              харуулаад орхивол хагас ажил болно. */}
+          {partnerMood && (
+            <div className="flex items-center gap-2 mb-2" onClick={(e) => e.stopPropagation()}>
+              <span className="text-[15px] leading-none">{partnerMood.emoji}</span>
+              <span className="text-[11.5px] font-bold" style={{ color: C.inkSoft }}>{partnerMood.label} байна</span>
+              {moodReply(partnerMood) && (
+                <button onClick={() => { onCare?.({ message: moodReply(partnerMood) }); setMoodSent(true); }}
+                  disabled={moodSent}
+                  className="ml-auto shrink-0 rounded-full px-3 py-1 text-[10.5px] font-extrabold active:scale-95 disabled:opacity-50"
+                  style={{ background: moodSent ? C.sage : C.peachDeep, color: "#fff", transition: "transform 120ms ease" }}>
+                  {moodSent ? "Илгээгдлээ" : "Дэмжих"}
+                </button>
+              )}
+            </div>
+          )}
+
           {partnerStatus && (
             <div className="text-[11.5px] font-bold mb-2 leading-snug" style={{ color: C.inkSoft }}>{partnerStatus}</div>
           )}
@@ -707,6 +747,8 @@ export default function App() {
   const [myStatus, setMyStatus] = useState("");
   const [partnerStatus, setPartnerStatus] = useState("");
   const [mySong, setMySong] = useState(null);
+  const [myMood, setMyMood] = useState(null);
+  const [partnerMood, setPartnerMood] = useState(null);
   const [partnerSong, setPartnerSong] = useState(null);
   const [partnerAt, setPartnerAt] = useState(0);       /* агуулга сүүлд өөрчлөгдсөн */
   const [partnerSeenAt, setPartnerSeenAt] = useState(0); /* апп сүүлд нээлттэй байсан */
@@ -849,16 +891,25 @@ export default function App() {
 
   /* Статус ба сонсож буй дуу нэг л баримт дээр сууна — нэг л сонсогч хангалттай */
   useEffect(() => {
-    if (!accountKey) { setMyStatus(""); setMySong(null); return; }
+    if (!accountKey) { setMyStatus(""); setMySong(null); setMyMood(null); return; }
     const unsub = onSnapshot(profileDoc(accountKey), (s) => {
       setMyStatus(s.data()?.status || "");
       setMySong(s.data()?.song || null);
+      setMyMood(moodToday(s.data(), ubDay()));
     }, () => {});
     return unsub;
   }, [accountKey]);
 
+  /* Сэтгэл санааг өдөртэй нь хамт бичнэ — өчигдрийнхийг өнөөдөр харуулах нь
+     худал мэдээлэл тул уншихдаа өдрөөр нь шалгана. */
+  const setMood = (key) => {
+    if (!accountKey) return;
+    setDoc(profileDoc(accountKey), { mood: key, moodDay: ubDay(), at: serverTimestamp() }, { merge: true })
+      .catch(() => {});
+  };
+
   useEffect(() => {
-    if (!partnerKey) { setPartnerStatus(""); setPartnerSong(null); setPartnerAt(0); setPartnerSeenAt(0); return; }
+    if (!partnerKey) { setPartnerStatus(""); setPartnerSong(null); setPartnerAt(0); setPartnerSeenAt(0); setPartnerMood(null); return; }
     const unsub = onSnapshot(profileDoc(partnerKey), (s) => {
       const d = s.data() || {};
       setPartnerStatus(d.status || "");
@@ -867,6 +918,7 @@ export default function App() {
          seenAt — апп сүүлд нээлттэй байсан мөч. Хоёр өөр асуулт. */
       setPartnerAt(d.at?.toMillis?.() || 0);
       setPartnerSeenAt(d.seenAt?.toMillis?.() || 0);
+      setPartnerMood(moodToday(d, ubDay()));
     }, () => {});
     return unsub;
   }, [partnerKey]);
@@ -1566,7 +1618,7 @@ export default function App() {
                 </div>
               )}
               <div key={tab} className={`${navDir === "back" ? "scr-back" : "scr-in"} ${tab === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
-                {tab === "home" && <HomeScreen go={go} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} partnerStatus={partnerStatus} partnerSong={partnerSong} partnerUnseen={partnerUnseen} partnerOnline={partnerOnline} onMiss={sendMiss} onCare={sendCare} myStatus={myStatus} mySong={mySong} coupleInfo={coupleInfo} day={day} streak={streak} nextEvent={nextEvent} accountKey={accountKey} partnerKey={partnerKey} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} chatUnread={chatUnread} />}
+                {tab === "home" && <HomeScreen go={go} {...{ ml, goal, items, clock, justReset, avatar, profileName, screenApps, appMin, canInstall, isIOS, isStandalone, installDismissed, updateAvailable, pushState, pushBusy, pushError, pushDismissed }} partner={partnerStats} partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} partnerStatus={partnerStatus} partnerSong={partnerSong} partnerUnseen={partnerUnseen} partnerOnline={partnerOnline} onMiss={sendMiss} onCare={sendCare} onMood={setMood} myMood={myMood} partnerMood={partnerMood} myStatus={myStatus} mySong={mySong} coupleInfo={coupleInfo} day={day} streak={streak} nextEvent={nextEvent} accountKey={accountKey} partnerKey={partnerKey} onInstall={installApp} onDismissInstall={dismissInstall} onApplyUpdate={applyUpdate} onEnablePush={enablePush} onDismissPush={dismissPush} gifCount={frames.length} chatUnread={chatUnread} />}
                 {tab === "water" && <WaterScreen {...{ ml, setMl, log, setLog, weight, setWeight, goal }} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "list" && <ListScreen items={items} setItems={setItems} partner={partnerStats} onBack={() => go("home")} />}
                 {tab === "screen" && <ScreenTimeScreen {...{ screenApps, screenHistory, appMin }} partner={partnerStats} onBack={() => go("home")} />}
@@ -1586,7 +1638,7 @@ export default function App() {
                 {tab === "map" && <LiveMapScreen accountKey={accountKey} partnerKey={partnerKey} profileName={profileName}
                   partnerName={partnerKey ? ACCOUNTS[partnerKey].name : ""} avatar={avatar} partnerAvatar={partnerStats?.avatar}
                   onBack={() => go("home")} />}
-                {tab === "partner" && <PartnerScreen partner={partnerStats} accountKey={accountKey} partnerKey={partnerKey} partnerStatus={partnerStatus} partnerSong={partnerSong} onSeen={markPartnerSeen} onBack={() => go("home")} />}
+                {tab === "partner" && <PartnerScreen partner={partnerStats} profileName={profileName} accountKey={accountKey} partnerKey={partnerKey} partnerStatus={partnerStatus} partnerSong={partnerSong} onSeen={markPartnerSeen} onBack={() => go("home")} />}
                 {tab === "chat" && <ChatScreen onBack={() => go("home")} profileName={profileName} accountKey={accountKey} partnerKey={partnerKey} savedIds={savedIds} onPartnerBubble={handlePartnerBubble} partnerAvatar={partnerStats?.avatar} />}
               </div>
             </div>
