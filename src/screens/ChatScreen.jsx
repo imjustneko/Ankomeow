@@ -12,6 +12,7 @@ import { MessageBody, copyableText, durText, loadBlob, messagePreview, putBlob, 
 import { DrawPad, DrawingView } from "../ui/drawing.jsx";
 import { chatStamp, ubDayOf } from "../lib/time.js";
 import { groupMessages } from "../lib/chatGroup.js";
+import { bigEmoji } from "../lib/emoji.js";
 import { compressImage } from "../lib/image.js";
 import { QUICK_REACTIONS, REACTIONS, REACTION_GIFS } from "../lib/reactions.js";
 
@@ -19,6 +20,19 @@ import { QUICK_REACTIONS, REACTIONS, REACTION_GIFS } from "../lib/reactions.js";
    хумигдана — Instagram-ийн адил нэг урт бөмбөлөг мэт харагдуулна. */
 const BUBBLE_R = 18;
 const BUBBLE_R_MERGED = 6;
+
+/* Хоёр товшилтыг "давхар" гэж үзэх дээд завсар. Энэ хугацаанд ганц товшилтын
+   үйлдлийг (реакцийн цэс нээх) хойшлуулна — эс бөгөөс давхар товшиход цэс
+   нээгээд хаагдаж анивчина. 260ms нь хүлээлт мэдрэгдэхээргүй богино. */
+const DOUBLE_TAP_MS = 260;
+const HEART = "❤️";
+
+/* Нисэх зүрхнүүдийн налуу ба хэмжээ. Санамсаргүй биш тогтмол — зурвас бүр
+   ижилхэн нисэх нь энд давуу тал: жагсаалт дахин зурагдах бүрд утга солигдвол
+   анимаци дунд нь үсэрнэ. */
+const HEART_OFFSETS = [
+  { x: 0, s: 1.1 }, { x: -18, s: 0.8 }, { x: 16, s: 0.9 }, { x: -8, s: 0.7 }, { x: 10, s: 0.75 },
+];
 
 export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onPartnerBubble }) {
   const [messages, setMessages] = useState([]);
@@ -39,6 +53,8 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
   const [sendError, setSendError] = useState("");
   const [replyTo, setReplyTo] = useState(null);   /* { id, senderName, preview } */
   const [flashId, setFlashId] = useState(null);   /* иш татсан зурвас руу үсрэхэд гэрэлтүүлнэ */
+  const [bursts, setBursts] = useState([]);       /* давхар товшиход нисэх зүрхнүүд */
+  const burstSeq = useRef(0);
   const bubbleRefs = useRef(new Map());
   const [stickers, setStickers] = useState([]);
   const listRef = useRef(null);
@@ -124,6 +140,39 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
     if (next[accountKey] === emoji) delete next[accountKey]; else next[accountKey] = emoji;
     updateDoc(messageDoc(m.id), { reactions: next }).catch(() => {});
     setReactingTo(null);
+  };
+
+  /* ── Давхар товшилт → зүрх ──
+     Instagram-ийн адил. Ганц товшилт нь реакцийн цэс нээдэг тул хоёулаа нэг
+     дохиог хуваалцана: эхний товшилтын үйлдлийг DOUBLE_TAP_MS хүлээлгээд,
+     дотор нь хоёр дахь товшилт ирвэл цуцалж зүрх тавина. */
+  const tapRef = useRef({ id: null, timer: null });
+
+  /* Салахдаа хүлээж буй таймер үлдээхгүй */
+  useEffect(() => () => clearTimeout(tapRef.current.timer), []);
+
+  const heart = (m) => {
+    const had = m.reactions?.[accountKey] === HEART;
+    react(m, HEART);
+    if (had) return; /* хоёр дахь давхар товшилт нь зүрхийг авдаг — нисгэх нь ойлгомжгүй */
+    navigator.vibrate?.(12);
+    const id = ++burstSeq.current;
+    setBursts((b) => [...b, { id, msgId: m.id }]);
+    setTimeout(() => setBursts((b) => b.filter((x) => x.id !== id)), 900);
+  };
+
+  const onBubbleTap = (m) => {
+    clearTimeout(tapRef.current.timer);
+    if (tapRef.current.id === m.id) {
+      tapRef.current = { id: null, timer: null };
+      heart(m);
+      return;
+    }
+    const timer = setTimeout(() => {
+      tapRef.current = { id: null, timer: null };
+      setReactingTo((id) => (id === m.id ? null : m.id));
+    }, DOUBLE_TAP_MS);
+    tapRef.current = { id: m.id, timer };
   };
 
   const copyMessage = async (m) => {
@@ -321,9 +370,11 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
           groupMessages(messages, ubDayOf).map(({ m, stamp, groupStart, groupEnd }) => {
             const mine = m.sender === accountKey;
             const draw = m.type === "drawing";
-            /* Зурсан зураг ба "санаж байна" хоёр бөмбөлөггүй хөвнө —
-               өөрсдийн бүрхүүлээ зурдаг тул давхар хүрээ илүүц. */
-            const bare = (draw || m.type === "miss") && !m.replyTo;
+            /* Зурсан зураг, "санаж байна", цэвэр эможи гурав бөмбөлөггүй хөвнө —
+               эхний хоёр нь өөрсдийн бүрхүүлээ зурдаг, эможи нь Instagram-ийн
+               адил том бичиг болж бөмбөлөгт багтахаа больдог. */
+            const bare = (draw || m.type === "miss"
+              || (m.type === "text" && bigEmoji(m.text))) && !m.replyTo;
             const media = m.type === "image" || draw || m.type === "location" || (m.type === "reaction" && m.gifUrl);
             const seen = mine && m.createdAt && partnerSeenAt && m.createdAt.toMillis() <= partnerSeenAt.toMillis();
             const myReaction = m.reactions?.[accountKey];
@@ -344,12 +395,26 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
                 {!mine && groupStart && m.senderName && (
                   <div className="text-[9.5px] font-bold mb-1 px-1" style={{ color: C.inkSoft }}>{m.senderName}</div>
                 )}
+                <div className="relative">
+                  {/* Давхар товшилтын зүрхнүүд — бөмбөлгийн дээгүүр нисэж бүдгэрнэ */}
+                  <div className="absolute inset-x-0 bottom-full h-24 pointer-events-none overflow-hidden">
+                    {bursts.filter((b) => b.msgId === m.id).map((b) => (
+                      HEART_OFFSETS.map((o, i) => (
+                        <span key={`${b.id}-${i}`} className="absolute left-1/2 bottom-0 miss-heart"
+                          role="img" aria-label="зүрх"
+                          style={{ transform: `translateX(${o.x}px) scale(${o.s})`, fontSize: 20, lineHeight: 1,
+                            animationDelay: `${i * 60}ms` }}>
+                          {HEART}
+                        </span>
+                      ))
+                    ))}
+                  </div>
                 <div
                   ref={(el) => {
                     if (el) bubbleRefs.current.set(m.id, el); else bubbleRefs.current.delete(m.id);
                     if (m.id === lastPartnerId) lastPartnerBubbleRef.current = el;
                   }}
-                  onClick={() => setReactingTo((id) => (id === m.id ? null : m.id))}
+                  onClick={() => onBubbleTap(m)}
                   className={`max-w-[75%] text-[13px] font-semibold cursor-pointer ${media && !m.replyTo ? "p-1.5" : "px-3.5 py-2.5"}`}
                   style={{
                     ...(bare
@@ -377,6 +442,7 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
                     </button>
                   )}
                   <MessageBody m={m} mine={mine} />
+                </div>
                 </div>
 
                 {reactingTo === m.id && (
