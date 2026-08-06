@@ -1,18 +1,23 @@
 /* Чат — зурвас, зураг, зурсан зураг, дуут зурвас, байршил, хариулт. */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { C } from "../lib/theme.js";
 import { Header, Pill } from "../ui/primitives.jsx";
 import { CHAT_ROOM, auth, blobDoc, db, messageDoc, messagesCol, savedItemDoc, stickerDoc, stickersCol } from "../lib/firebase.js";
 import { addDoc, deleteDoc, doc, getDoc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { DRAW_CHECKER } from "../lib/drawing.js";
 import { notifyPartner } from "../push.js";
-import { Bookmark, BookmarkCheck, Brush, Check, ChevronDown, Copy, Heart, Image as ImageIcon, MapPin, Mic, Plus, Reply, Send, Sticker, Trash2, X } from "lucide-react";
+import { Bookmark, BookmarkCheck, Brush, Check, ChevronDown, Copy, Heart, Image as ImageIcon, MapPin, Mic, Plus, Reply, Search, Send, Sticker, Trash2, X } from "lucide-react";
 import { MessageBody, copyableText, durText, loadBlob, messagePreview, putBlob, savedSnapshot, writeClipboard } from "../ui/message.jsx";
 import { DrawPad, DrawingView } from "../ui/drawing.jsx";
 import { chatStamp, ubDayOf } from "../lib/time.js";
 import { groupMessages } from "../lib/chatGroup.js";
 import { bigEmoji } from "../lib/emoji.js";
+import { listChange, restoreTop } from "../lib/chatList.js";
+import { seenUpToId } from "../lib/seen.js";
+import { searchMessages, snippet } from "../lib/chatSearch.js";
+import { mediaItems } from "../lib/media.js";
+import { MediaGrid } from "../ui/mediaGrid.jsx";
 import { compressImage, imageDims } from "../lib/image.js";
 import { QUICK_REACTIONS, REACTIONS, REACTION_GIFS } from "../lib/reactions.js";
 import { reactionChips } from "../lib/reactionChips.js";
@@ -30,6 +35,11 @@ const HEART = "❤️";
    зургийн ачаалалт зэргээс болж хэдэн px зөрөх нь энгийн үзэгдэл. */
 const NEAR_BOTTOM_PX = 80;
 
+/* Нэг удаад хэдэн зурвас нээх вэ. Дээд хэсэгт энэ зайд ойртоход дараагийнх
+   нь өөрөө ачаалагдана — товч дарахыг хүлээхгүй. */
+const PAGE = 100;
+const NEAR_TOP_PX = 200;
+
 /* Нисэх зүрхнүүдийн налуу ба хэмжээ. Санамсаргүй биш тогтмол — зурвас бүр
    ижилхэн нисэх нь энд давуу тал: жагсаалт дахин зурагдах бүрд утга солигдвол
    анимаци дунд нь үсэрнэ. */
@@ -37,7 +47,7 @@ const HEART_OFFSETS = [
   { x: 0, s: 1.1 }, { x: -18, s: 0.8 }, { x: 16, s: 0.9 }, { x: -8, s: 0.7 }, { x: 10, s: 0.75 },
 ];
 
-export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onPartnerBubble }) {
+export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onPartnerBubble, partnerAvatar }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [showReact, setShowReact] = useState(false);
@@ -59,6 +69,13 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
   const [bursts, setBursts] = useState([]);       /* давхар товшиход нисэх зүрхнүүд */
   const [unread, setUnread] = useState(0);        /* доош гүйлгээгүй байхад ирсэн зурвас */
   const [partnerTyping, setPartnerTyping] = useState(false);
+  const [pageSize, setPageSize] = useState(PAGE);   /* хуучин зурвас нээхэд өснө */
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const restoreRef = useRef(null);                  /* ачаалахын өмнөх гүйлгэлтийн байрлал */
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [showMedia, setShowMedia] = useState(false);
   const burstSeq = useRef(0);
   const bubbleRefs = useRef(new Map());
   const [stickers, setStickers] = useState([]);
@@ -66,13 +83,31 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
   const lastPartnerBubbleRef = useRef(null);
   const imgFileRef = useRef(null);
 
+  /* ── Зурвас татах ──
+     Хязгаарыг ӨСГӨХ замаар хуучин зурвасыг нээнэ. Тусдаа хуудаслалт хийж
+     сонсогчтой нийлүүлэхээс хамаагүй энгийн бөгөөд Firestore-ийн офлайн кэш
+     давхардсан уншилтыг өөрөө шингээдэг. Зурвас бүр хөнгөн (хүнд хавсралт нь
+     blobs дотор тусдаа) тул хязгаар өсөх нь бодит зардал болохгүй. */
   useEffect(() => {
-    const q = query(messagesCol(), orderBy("createdAt", "desc"), limit(100));
+    const q = query(messagesCol(), orderBy("createdAt", "desc"), limit(pageSize));
     const unsub = onSnapshot(q, (snap) => {
       setMessages(snap.docs.map((d) => ({ id: d.id, ...d.data() })).reverse());
-    }, () => {});
+      /* Хүссэнээс цөөн ирвэл цааш юу ч алга */
+      setHasMore(snap.size >= pageSize);
+      setLoadingOlder(false);
+    }, () => setLoadingOlder(false));
     return unsub;
-  }, []);
+  }, [pageSize]);
+
+  const loadOlder = () => {
+    if (loadingOlder || !hasMore) return;
+    const el = listRef.current;
+    /* Одоогийн харагдацыг тэмдэглэнэ — дээрээс зурвас нэмэгдэхэд байрлалыг
+       сэргээхэд хэрэгтэй. Эс бөгөөс уншиж байсан газраасаа хөөгдөнө. */
+    if (el) restoreRef.current = { height: el.scrollHeight, top: el.scrollTop };
+    setLoadingOlder(true);
+    setPageSize((n) => n + PAGE);
+  };
 
   useEffect(() => {
     if (!accountKey) return;
@@ -108,20 +143,27 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
     setUnread(0);
   };
 
-  /* Чат нээгдэхэд эхний удаа доод талд аваачна — анимацгүйгээр, шууд. */
-  const firstRenderRef = useRef(true);
-  const prevCountRef = useRef(0);
+  const prevListRef = useRef({ count: 0, lastId: null });
 
-  useEffect(() => {
-    const added = messages.length - prevCountRef.current;
-    prevCountRef.current = messages.length;
-    if (added <= 0) return;
+  /* useLayoutEffect — DOM шинэчлэгдсэн ч ЗУРАГДААГҮЙ байхад ажиллана.
+     Хуучин зурвас нэмэгдэхэд байрлалыг энд сэргээснээр үсрэлт нүдэнд
+     харагдахгүй; энгийн useEffect бол нэг фрэйм үсэрч анивчина. */
+  useLayoutEffect(() => {
+    const next = { count: messages.length, lastId: messages[messages.length - 1]?.id ?? null };
+    const { kind, added } = listChange(prevListRef.current, next);
+    prevListRef.current = next;
 
-    if (firstRenderRef.current) {
-      firstRenderRef.current = false;
-      scrollToBottom(false);
+    if (kind === "none") return;
+
+    if (kind === "first") { scrollToBottom(false); return; }
+
+    if (kind === "older") {
+      const el = listRef.current, before = restoreRef.current;
+      if (el && before) el.scrollTop = restoreTop(before, { height: el.scrollHeight });
+      restoreRef.current = null;
       return;
     }
+
     /* Өөрийн илгээсэн зурвас бол хаана ч байсан доош дагана */
     const mineLast = messages[messages.length - 1]?.sender === accountKey;
     if (mineLast || atBottom()) scrollToBottom();
@@ -192,13 +234,21 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
     setReplyTo(null); /* хариулт нэг л зурваст хамаарна */
   };
 
-  /* Иш татсан зурвас руу үсэрч, богино хугацаанд гэрэлтүүлнэ */
+  /* Иш татсан зурвас руу үсэрч, богино хугацаанд гэрэлтүүлнэ.
+
+     requestAnimationFrame нь заавал хэрэгтэй: дуудагч нь ихэвчлэн зэрэг нэг
+     самбарыг хаадаг (хайлтын үр дүн г.м.). React тэр өөрчлөлтийг энэ дуудлагын
+     ДАРАА хэрэгжүүлдэг тул шууд гүйлгэвэл жагсаалтын өндөр хуучин утгаараа
+     тооцогдоно — хэмжихэд 386px байснаа 588px болж, зорилтот зурвас голоос
+     ~100px зөрч, зарим тохиолдолд гүйлгэлт бүр цуцлагдаж байв. */
   const jumpTo = (id) => {
-    const el = bubbleRefs.current.get(id);
-    if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    setFlashId(id);
-    setTimeout(() => setFlashId((f) => (f === id ? null : f)), 1400);
+    requestAnimationFrame(() => {
+      const el = bubbleRefs.current.get(id);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setFlashId(id);
+      setTimeout(() => setFlashId((f) => (f === id ? null : f)), 1400);
+    });
   };
 
   const startReply = (m) => {
@@ -402,6 +452,19 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
   /* Хамтрагчийн хамгийн сүүлийн зурвас — chibi үүн рүү очиж заана */
   const lastPartnerId = [...messages].reverse().find((m) => m.sender !== accountKey)?.id;
 
+  /* Хамтрагч ХААНА хүртэл уншсан. "Үзсэн" бичиг нь зөвхөн сүүлийн зурвасын
+     тухай хэлдэг тул хэрэв тэр 5 зурвасын өмнө уншихаа больсон бол хаана
+     зогссоныг мэдэх арга байсангүй. Тэмдэг нь тэр байрлалыг харуулна. */
+  const partnerReadId = seenUpToId(messages, partnerSeenAt, accountKey);
+
+  /* Хайлт ба медиа хоёул ачаалагдсан зурвасууд дотроос гарна — дээш гүйлгэх
+     тусам хамрах хүрээ нь тэлнэ. Нээгээгүй үед огт тооцохгүй. */
+  const results = useMemo(
+    () => (showSearch ? searchMessages(messages, searchTerm) : []),
+    [showSearch, messages, searchTerm]
+  );
+  const media = useMemo(() => (showMedia ? mediaItems(messages) : []), [showMedia, messages]);
+
   /* Зурвасын жагсаалт зурагдаж дууссаны дараа байрлалыг эцэгт өгнө.
      requestAnimationFrame нь хоёр зорилготой:
        1. layout (DOM commit) тогтсоны дараа хэмжинэ.
@@ -424,17 +487,94 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <Header title="Чат" sub="Хайртай хүнтэйгээ шууд бичих" onBack={onBack} />
+      <Header title="Чат" sub="Хайртай хүнтэйгээ шууд бичих" onBack={onBack}
+        action={
+          <div className="flex gap-1.5">
+            {[
+              { key: "media", on: showMedia, icon: <ImageIcon size={17} strokeWidth={2.2} />, label: "Зургууд",
+                toggle: () => { setShowSearch(false); setShowMedia((s) => !s); } },
+              { key: "search", on: showSearch, icon: <Search size={17} strokeWidth={2.2} />, label: "Хайх",
+                toggle: () => { setShowMedia(false); setSearchTerm(""); setShowSearch((s) => !s); } },
+            ].map((b) => (
+              <button key={b.key} onClick={b.toggle}
+                className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90"
+                style={{
+                  border: `1.6px solid ${C.line2}`,
+                  background: b.on ? C.lilacDeep : "transparent",
+                  color: b.on ? "#fff" : C.ink,
+                  transition: "transform 120ms ease",
+                }}
+                aria-label={b.on ? `${b.label} — хаах` : b.label}>
+                {b.on ? <X size={17} strokeWidth={2.6} /> : b.icon}
+              </button>
+            ))}
+          </div>
+        } />
+
+      {showMedia && (
+        <div className="mb-3 overflow-y-auto" style={{ maxHeight: 320 }}>
+          <MediaGrid items={media} onJump={(id) => { setShowMedia(false); jumpTo(id); }} />
+        </div>
+      )}
+
+      {showSearch && (
+        <div className="mb-3">
+          <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Зурвас хайх…" autoFocus
+            className="w-full rounded-full px-4 py-2.5 text-[16px] font-medium outline-none"
+            style={{ background: C.card, border: `1.8px solid ${C.line2}`, color: C.ink }} />
+
+          {searchTerm.trim() && (
+            <div className="mt-2">
+              <div className="text-[10.5px] font-bold px-1 pb-1.5" style={{ color: C.inkSoft }}>
+                {results.length === 0
+                  ? "Олдсонгүй. Дээш гүйлгэвэл хуучин зурвас нэмж ачаалагдана."
+                  : `${results.length} зурвас олдлоо`}
+              </div>
+              <div className="overflow-y-auto" style={{ maxHeight: 260 }}>
+                {results.map((m) => (
+                  <button key={m.id}
+                    onClick={() => { setShowSearch(false); setSearchTerm(""); jumpTo(m.id); }}
+                    className="w-full text-left rounded-2xl px-3 py-2 mb-1.5 active:scale-[0.99]"
+                    style={{ background: C.card, border: `1.5px solid ${C.line}`, transition: "transform 120ms ease" }}>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-[10px] font-extrabold shrink-0" style={{ color: C.lilacDeep }}>
+                        {m.sender === accountKey ? "Би" : (m.senderName || "Хамтрагч")}
+                      </span>
+                      <span className="text-[9.5px] font-bold shrink-0" style={{ color: C.inkSoft }}>
+                        {m.createdAt?.toDate ? chatStamp(m.createdAt.toDate()) : ""}
+                      </span>
+                    </div>
+                    <div className="text-[12px] font-semibold line-clamp-2" style={{ color: C.ink }}>
+                      {snippet(m.text, searchTerm)}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div ref={listRef}
-        onScroll={() => { if (atBottom()) setUnread(0); }}
+        onScroll={() => {
+          if (atBottom()) setUnread(0);
+          if (listRef.current?.scrollTop < NEAR_TOP_PX) loadOlder();
+        }}
         className="flex-1 min-h-0 overflow-y-auto overscroll-contain mb-3">
         {messages.length === 0 ? (
           <p className="text-[12px] py-8 text-center font-medium" style={{ color: C.inkSoft }}>
             Одоогоор мессеж алга. Эхний мессежээ бичээрэй.
           </p>
         ) : (
-          groupMessages(messages, ubDayOf).map(({ m, stamp, groupStart, groupEnd }) => {
+          <>
+          {/* Дээд талд түүх үргэлжилж байгааг мэдэгдэнэ */}
+          {(loadingOlder || hasMore) && (
+            <div className="text-center text-[10.5px] font-bold py-3" style={{ color: C.inkSoft }}>
+              {loadingOlder ? "Хуучин зурвас ачаалж байна…" : "Дээш гүйлгэвэл хуучин зурвас гарна"}
+            </div>
+          )}
+          {groupMessages(messages, ubDayOf).map(({ m, stamp, groupStart, groupEnd }) => {
             const mine = m.sender === accountKey;
             const draw = m.type === "drawing";
             /* Зурсан зураг, "санаж байна", цэвэр эможи гурав бөмбөлөггүй хөвнө —
@@ -442,7 +582,7 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
                адил том бичиг болж бөмбөлөгт багтахаа больдог. */
             const bare = (draw || m.type === "miss"
               || (m.type === "text" && bigEmoji(m.text))) && !m.replyTo;
-            const media = m.type === "image" || draw || m.type === "location" || (m.type === "reaction" && m.gifUrl);
+            const isMedia = m.type === "image" || draw || m.type === "location" || (m.type === "reaction" && m.gifUrl);
             const seen = mine && m.createdAt && partnerSeenAt && m.createdAt.toMillis() <= partnerSeenAt.toMillis();
             const myReaction = m.reactions?.[accountKey];
             const chips = reactionChips(m.reactions, accountKey);
@@ -499,7 +639,7 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
                   /* `relative` — хариултын дүрс absolute тул байрлуулаагүй
                      элементийн ДЭЭР зурагддаг. Бөмбөлгийг ч байрлуулснаар DOM
                      дараалал шийднэ: бөмбөлөг сүүлд байгаа тул дүрсийг далдална. */
-                  className={`relative w-fit text-[13px] font-semibold cursor-pointer ${media && !m.replyTo ? "p-1.5" : "px-3.5 py-2.5"}`}
+                  className={`relative w-fit text-[13px] font-semibold cursor-pointer ${isMedia && !m.replyTo ? "p-1.5" : "px-3.5 py-2.5"}`}
                   style={{
                     ...g.style,
                     ...(bare
@@ -618,6 +758,19 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
                 )}
 
                 {/* Уншсан төлөв зөвхөн өөрийн сүүлийн зурвасын доор — Instagram шиг */}
+                {/* Хамтрагч хаана хүртэл уншсаныг тэр зурвас дээр нь заана.
+                    Сүүлийн зурвас хүртэл уншсан бол ердийн "Үзсэн" — тусад нь
+                    аватар харуулах шаардлагагүй. */}
+                {m.id === partnerReadId && m.id !== lastMineId && (
+                  <div className="flex items-center gap-1 mt-1 px-1">
+                    {partnerAvatar
+                      ? <img src={partnerAvatar} alt="" className="w-3.5 h-3.5 rounded-full object-cover"
+                          style={{ border: `1px solid ${C.line2}` }} />
+                      : <span className="w-3.5 h-3.5 rounded-full" style={{ background: C.line2 }} />}
+                    <span className="text-[9px] font-bold" style={{ color: C.inkSoft }}>энд хүртэл уншсан</span>
+                  </div>
+                )}
+
                 {m.id === lastMineId && (
                   <div className="text-[9.5px] font-bold mt-1 px-1" style={{ color: C.inkSoft }}>
                     {seen ? "Үзсэн" : "Илгээгдсэн"}
@@ -625,7 +778,8 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
                 )}
               </div>
             );
-          })
+          })}
+          </>
         )}
 
         {/* Хамтрагч бичиж байна — жагсаалтын доор, зурвасын байранд */}
