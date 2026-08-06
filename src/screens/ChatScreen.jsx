@@ -7,25 +7,28 @@ import { CHAT_ROOM, auth, blobDoc, db, messageDoc, messagesCol, savedItemDoc, st
 import { addDoc, deleteDoc, doc, getDoc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { DRAW_CHECKER } from "../lib/drawing.js";
 import { notifyPartner } from "../push.js";
-import { Bookmark, BookmarkCheck, Brush, Check, Copy, Heart, Image as ImageIcon, MapPin, Mic, Plus, Reply, Send, Sticker, Trash2, X } from "lucide-react";
+import { Bookmark, BookmarkCheck, Brush, Check, ChevronDown, Copy, Heart, Image as ImageIcon, MapPin, Mic, Plus, Reply, Send, Sticker, Trash2, X } from "lucide-react";
 import { MessageBody, copyableText, durText, loadBlob, messagePreview, putBlob, savedSnapshot, writeClipboard } from "../ui/message.jsx";
 import { DrawPad, DrawingView } from "../ui/drawing.jsx";
 import { chatStamp, ubDayOf } from "../lib/time.js";
 import { groupMessages } from "../lib/chatGroup.js";
 import { bigEmoji } from "../lib/emoji.js";
-import { compressImage } from "../lib/image.js";
+import { compressImage, imageDims } from "../lib/image.js";
 import { QUICK_REACTIONS, REACTIONS, REACTION_GIFS } from "../lib/reactions.js";
+import { reactionChips } from "../lib/reactionChips.js";
+import { useBubbleGestures } from "../hooks/useBubbleGestures.js";
+import { TYPING_STALE_MS, TYPING_STOP_MS, isTyping, shouldPing } from "../lib/typing.js";
 
 /* Бөмбөлгийн булангийн радиус. Бүлгийн дунд байгаа булан нь MERGED болж
    хумигдана — Instagram-ийн адил нэг урт бөмбөлөг мэт харагдуулна. */
 const BUBBLE_R = 18;
 const BUBBLE_R_MERGED = 6;
 
-/* Хоёр товшилтыг "давхар" гэж үзэх дээд завсар. Энэ хугацаанд ганц товшилтын
-   үйлдлийг (реакцийн цэс нээх) хойшлуулна — эс бөгөөс давхар товшиход цэс
-   нээгээд хаагдаж анивчина. 260ms нь хүлээлт мэдрэгдэхээргүй богино. */
-const DOUBLE_TAP_MS = 260;
 const HEART = "❤️";
+
+/* Доод хэсэгт "байгаа" гэж үзэх зай. Яг 0 болгож болохгүй — зурвасын өндөр,
+   зургийн ачаалалт зэргээс болж хэдэн px зөрөх нь энгийн үзэгдэл. */
+const NEAR_BOTTOM_PX = 80;
 
 /* Нисэх зүрхнүүдийн налуу ба хэмжээ. Санамсаргүй биш тогтмол — зурвас бүр
    ижилхэн нисэх нь энд давуу тал: жагсаалт дахин зурагдах бүрд утга солигдвол
@@ -54,6 +57,8 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
   const [replyTo, setReplyTo] = useState(null);   /* { id, senderName, preview } */
   const [flashId, setFlashId] = useState(null);   /* иш татсан зурвас руу үсрэхэд гэрэлтүүлнэ */
   const [bursts, setBursts] = useState([]);       /* давхар товшиход нисэх зүрхнүүд */
+  const [unread, setUnread] = useState(0);        /* доош гүйлгээгүй байхад ирсэн зурвас */
+  const [partnerTyping, setPartnerTyping] = useState(false);
   const burstSeq = useRef(0);
   const bubbleRefs = useRef(new Map());
   const [stickers, setStickers] = useState([]);
@@ -89,11 +94,84 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
     setDoc(doc(db, "rooms", CHAT_ROOM, "reads", accountKey), { at: serverTimestamp() }).catch(() => {});
   }, [messages.length, accountKey]);
 
+  /* ── Доош гүйлгэх ──
+     Өмнө нь шинэ зурвас ирэх бүрд БОЛЗОЛГҮЙ доош татдаг байсан тул хуучин
+     зурвас уншиж байхад чинь хүчээр буцаадаг байв. Одоо доод хэсэгт байвал л
+     дагана; дээгүүр байвал "Шинэ зурвас" товч гаргана. */
+  const atBottom = () => {
+    const el = listRef.current;
+    return !el || el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
+  };
+
+  const scrollToBottom = (smooth = true) => {
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+    setUnread(0);
+  };
+
+  /* Чат нээгдэхэд эхний удаа доод талд аваачна — анимацгүйгээр, шууд. */
+  const firstRenderRef = useRef(true);
+  const prevCountRef = useRef(0);
+
   useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages.length]);
+    const added = messages.length - prevCountRef.current;
+    prevCountRef.current = messages.length;
+    if (added <= 0) return;
+
+    if (firstRenderRef.current) {
+      firstRenderRef.current = false;
+      scrollToBottom(false);
+      return;
+    }
+    /* Өөрийн илгээсэн зурвас бол хаана ч байсан доош дагана */
+    const mineLast = messages[messages.length - 1]?.sender === accountKey;
+    if (mineLast || atBottom()) scrollToBottom();
+    else setUnread((n) => n + added);
+  }, [messages, accountKey]);
+
+  /* ── "Бичиж байна" ──
+     Товч дарах бүрд бичихгүй — TYPING_PING_MS-д нэг л удаа. Бичихээ болиход
+     тодорхой хугацааны дараа өөрөө унтарна. */
+  const typingDoc = doc(db, "rooms", CHAT_ROOM, "typing", accountKey);
+  const lastPingRef = useRef(0);
+  const stopTypingRef = useRef(null);
+
+  const setTyping = (on) => {
+    lastPingRef.current = on ? Date.now() : 0;
+    setDoc(typingDoc, { typing: on, at: serverTimestamp() }).catch(() => {});
+  };
+
+  const pingTyping = () => {
+    if (shouldPing(lastPingRef.current, Date.now())) setTyping(true);
+    clearTimeout(stopTypingRef.current);
+    stopTypingRef.current = setTimeout(() => setTyping(false), TYPING_STOP_MS);
+  };
+
+  const clearTyping = () => {
+    clearTimeout(stopTypingRef.current);
+    if (lastPingRef.current) setTyping(false);
+  };
+
+  /* Чатаас гарахад унтраана — эс бөгөөс хамтрагчид мөнхөд "бичиж байна" харагдана */
+  useEffect(() => () => {
+    clearTimeout(stopTypingRef.current);
+    setDoc(doc(db, "rooms", CHAT_ROOM, "typing", accountKey), { typing: false, at: serverTimestamp() }).catch(() => {});
+  }, [accountKey]);
+
+  /* Хамтрагчийн төлөв. Хуучирсан төлөвийг өөрөө хүчингүй болгохын тулд
+     хугацаа хэмжинэ — апп унтарсан бол унтраах бичилт хэзээ ч ирэхгүй. */
+  useEffect(() => {
+    let expire = null;
+    const unsub = onSnapshot(doc(db, "rooms", CHAT_ROOM, "typing", partnerKey), (snap) => {
+      clearTimeout(expire);
+      const on = snap.exists() && isTyping(snap.data(), Date.now());
+      setPartnerTyping(on);
+      if (on) expire = setTimeout(() => setPartnerTyping(false), TYPING_STALE_MS);
+    }, () => {});
+    return () => { clearTimeout(expire); unsub(); };
+  }, [partnerKey]);
 
   const send = (payload) => {
+    clearTyping();
     /* Алдааг чимээгүй залгихгүй — өмнө нь илгээгдээгүйг мэдэх арга байхгүй байв */
     addDoc(messagesCol(), {
       sender: accountKey, senderName: profileName, createdAt: serverTimestamp(),
@@ -142,15 +220,6 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
     setReactingTo(null);
   };
 
-  /* ── Давхар товшилт → зүрх ──
-     Instagram-ийн адил. Ганц товшилт нь реакцийн цэс нээдэг тул хоёулаа нэг
-     дохиог хуваалцана: эхний товшилтын үйлдлийг DOUBLE_TAP_MS хүлээлгээд,
-     дотор нь хоёр дахь товшилт ирвэл цуцалж зүрх тавина. */
-  const tapRef = useRef({ id: null, timer: null });
-
-  /* Салахдаа хүлээж буй таймер үлдээхгүй */
-  useEffect(() => () => clearTimeout(tapRef.current.timer), []);
-
   const heart = (m) => {
     const had = m.reactions?.[accountKey] === HEART;
     react(m, HEART);
@@ -161,19 +230,12 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
     setTimeout(() => setBursts((b) => b.filter((x) => x.id !== id)), 900);
   };
 
-  const onBubbleTap = (m) => {
-    clearTimeout(tapRef.current.timer);
-    if (tapRef.current.id === m.id) {
-      tapRef.current = { id: null, timer: null };
-      heart(m);
-      return;
-    }
-    const timer = setTimeout(() => {
-      tapRef.current = { id: null, timer: null };
-      setReactingTo((id) => (id === m.id ? null : m.id));
-    }, DOUBLE_TAP_MS);
-    tapRef.current = { id: m.id, timer };
-  };
+  /* Давхар товшилт → зүрх, удаан дарах → цэс, баруун шудрах → хариулах */
+  const gestures = useBubbleGestures({
+    onDoubleTap: heart,
+    onLongPress: (m) => setReactingTo((id) => (id === m.id ? null : m.id)),
+    onReply: startReply,
+  });
 
   const copyMessage = async (m) => {
     const t = copyableText(m);
@@ -255,8 +317,11 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
         dataUrl = await compressImage(file, 900, quality);
       }
       if (dataUrl.length <= 900000) {
+        /* Хэмжээг зурвастай хамт явуулна — хүлээн авагч тал зураг ирэхээс өмнө
+           байрыг барьж чадна. Хэмжээ олдохгүй ч зурвас илгээгдэнэ. */
+        const dims = await imageDims(dataUrl);
         const blobId = await putBlob(dataUrl, "image");
-        send({ type: "image", blobId });
+        send({ type: "image", blobId, ...(dims || {}) });
       } else {
         setSendError("Зураг хэт том байна. Өөр зураг сонгоно уу.");
       }
@@ -361,7 +426,9 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
     <div className="flex-1 flex flex-col min-h-0">
       <Header title="Чат" sub="Хайртай хүнтэйгээ шууд бичих" onBack={onBack} />
 
-      <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain mb-3">
+      <div ref={listRef}
+        onScroll={() => { if (atBottom()) setUnread(0); }}
+        className="flex-1 min-h-0 overflow-y-auto overscroll-contain mb-3">
         {messages.length === 0 ? (
           <p className="text-[12px] py-8 text-center font-medium" style={{ color: C.inkSoft }}>
             Одоогоор мессеж алга. Эхний мессежээ бичээрэй.
@@ -378,15 +445,20 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
             const media = m.type === "image" || draw || m.type === "location" || (m.type === "reaction" && m.gifUrl);
             const seen = mine && m.createdAt && partnerSeenAt && m.createdAt.toMillis() <= partnerSeenAt.toMillis();
             const myReaction = m.reactions?.[accountKey];
-            const reactionList = Object.values(m.reactions || {});
+            const chips = reactionChips(m.reactions, accountKey);
             /* Бүлгийн дотоод булангууд нийлж, нэг урт бөмбөлөг мэт харагдана.
                Зөвхөн илгээгчийн талын булангууд нийлнэ — нөгөө тал нь бүтэн
                дугуй хэвээр. Бөмбөлөггүй зурвас (зурсан зураг, "санаж байна")
                өөрийн хэлбэртэй тул үүнээс гадуур. */
             const side = mine ? "Right" : "Left";
+            /* Дохионы боловсруулагчид — зурвас бүрд нэг л удаа тооцоолно.
+               `el` нь функц: ref газардахаас өмнө дуудагдаж болзошгүй тул
+               элементийг шууд биш, хожим уншина. */
+            const g = gestures(m, () => bubbleRefs.current.get(m.id));
             return (
               <div key={m.id} className={`flex flex-col ${mine ? "items-end" : "items-start"}`}
-                style={{ marginTop: groupStart ? 8 : 2 }}>
+                /* Чип нь бөмбөлгөөс доош унждаг тул реакцтай зурваст илүү зай */
+                style={{ marginTop: groupStart ? 8 : 2, marginBottom: chips.length ? 8 : 0 }}>
                 {stamp && m.createdAt?.toDate && (
                   <div className="w-full text-center text-[10px] font-bold py-3" style={{ color: C.inkSoft }}>
                     {chatStamp(m.createdAt.toDate())}
@@ -395,7 +467,11 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
                 {!mine && groupStart && m.senderName && (
                   <div className="text-[9.5px] font-bold mb-1 px-1" style={{ color: C.inkSoft }}>{m.senderName}</div>
                 )}
-                <div className="relative">
+                {/* max-w-[75%] нь ЭНД байх ёстой. Бөмбөлөг дээр байвал 75% нь
+                    жагсаалтын биш, энэ ороолтын өргөнөөс тооцогдоно — ороолт нь
+                    агуулгаараа өргөсдөг тул бөмбөлгүүд ирмэг давж, эмх замбараагүй
+                    болно. */}
+                <div className="relative max-w-[75%]">
                   {/* Давхар товшилтын зүрхнүүд — бөмбөлгийн дээгүүр нисэж бүдгэрнэ */}
                   <div className="absolute inset-x-0 bottom-full h-24 pointer-events-none overflow-hidden">
                     {bursts.filter((b) => b.msgId === m.id).map((b) => (
@@ -409,14 +485,23 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
                       ))
                     ))}
                   </div>
+                {/* Шудрахад гарч ирэх хариултын дүрс — зөвхөн чирэх үед ил */}
+                <span className="swipe-hint absolute left-0 top-1/2 -translate-y-1/2 pointer-events-none"
+                  style={{ color: C.lilacDeep }}>
+                  <Reply size={16} strokeWidth={2.4} />
+                </span>
                 <div
                   ref={(el) => {
                     if (el) bubbleRefs.current.set(m.id, el); else bubbleRefs.current.delete(m.id);
                     if (m.id === lastPartnerId) lastPartnerBubbleRef.current = el;
                   }}
-                  onClick={() => onBubbleTap(m)}
-                  className={`max-w-[75%] text-[13px] font-semibold cursor-pointer ${media && !m.replyTo ? "p-1.5" : "px-3.5 py-2.5"}`}
+                  {...g}
+                  /* `relative` — хариултын дүрс absolute тул байрлуулаагүй
+                     элементийн ДЭЭР зурагддаг. Бөмбөлгийг ч байрлуулснаар DOM
+                     дараалал шийднэ: бөмбөлөг сүүлд байгаа тул дүрсийг далдална. */
+                  className={`relative w-fit text-[13px] font-semibold cursor-pointer ${media && !m.replyTo ? "p-1.5" : "px-3.5 py-2.5"}`}
                   style={{
+                    ...g.style,
                     ...(bare
                       ? { background: "transparent", border: "none", padding: 0 }
                       : {
@@ -443,6 +528,29 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
                   )}
                   <MessageBody m={m} mine={mine} />
                 </div>
+
+                {/* Реакцийн чип — бөмбөлгийн доод буланд наалдана.
+                    absolute тул зурвасын өндрийг нэмэхгүй; -mb нь дараагийн
+                    зурвастай мөргөлдөхгүйн тулд эцэгт зай үлдээнэ. */}
+                {chips.length > 0 && (
+                  <div className={`absolute -bottom-2 flex gap-0.5 ${mine ? "right-2" : "left-2"}`}>
+                    {chips.map((c) => (
+                      <span key={c.emoji}
+                        className="flex items-center gap-0.5 rounded-full px-1.5 text-[11px] leading-none"
+                        style={{
+                          height: 18,
+                          background: C.card,
+                          border: `1.5px solid ${c.mine ? C.lilacDeep : C.line}`,
+                          boxShadow: "0 1px 4px rgba(0,0,0,.10)",
+                        }}>
+                        {c.emoji}
+                        {c.count > 1 && (
+                          <span className="text-[9px] font-extrabold" style={{ color: C.inkSoft }}>{c.count}</span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 </div>
 
                 {reactingTo === m.id && (
@@ -509,12 +617,6 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
                   </>
                 )}
 
-                {reactionList.length > 0 && (
-                  <div className="flex gap-0.5 mt-1 px-1" style={{ fontSize: 13 }}>
-                    {reactionList.map((e, i) => <span key={i}>{e}</span>)}
-                  </div>
-                )}
-
                 {/* Уншсан төлөв зөвхөн өөрийн сүүлийн зурвасын доор — Instagram шиг */}
                 {m.id === lastMineId && (
                   <div className="text-[9.5px] font-bold mt-1 px-1" style={{ color: C.inkSoft }}>
@@ -524,6 +626,19 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
               </div>
             );
           })
+        )}
+
+        {/* Хамтрагч бичиж байна — жагсаалтын доор, зурвасын байранд */}
+        {partnerTyping && (
+          <div className="flex items-start" style={{ marginTop: 8 }}>
+            <div className="flex items-center gap-1 px-3.5 py-3 rounded-[18px]"
+              style={{ background: C.card, border: `1.5px solid ${C.line}` }}>
+              {[0, 1, 2].map((i) => (
+                <span key={i} className="typing-dot rounded-full"
+                  style={{ width: 6, height: 6, background: C.inkSoft, animationDelay: `${i * 160}ms` }} />
+              ))}
+            </div>
+          </div>
         )}
       </div>
 
@@ -606,6 +721,17 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
         </div>
       )}
 
+      {/* Дээгүүр уншиж байхад ирсэн зурвасыг мэдэгдэнэ — хүчээр татахгүй */}
+      {unread > 0 && (
+        <button onClick={() => scrollToBottom()}
+          className="self-center mb-2 flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[11.5px] font-extrabold active:scale-95"
+          style={{ background: C.lilacDeep, color: "#fff", boxShadow: "0 4px 14px rgba(0,0,0,.18)",
+            transition: "transform 150ms ease" }}>
+          <ChevronDown size={14} strokeWidth={2.8} />
+          {unread > 1 ? `${unread} шинэ зурвас` : "Шинэ зурвас"}
+        </button>
+      )}
+
       {/* Хариулж буй зурвас */}
       {replyTo && (
         <div className="flex items-center gap-2 mb-2 rounded-2xl px-3 py-2"
@@ -661,7 +787,13 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
           <Plus size={19} strokeWidth={2.6} />
         </button>
         <input ref={imgFileRef} type="file" accept="image/*" onChange={onImageChange} className="hidden" />
-        <input value={text} onChange={(e) => setText(e.target.value)}
+        <input value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            /* Бүх текстээ устгасан бол бичихээ больсонтой адил */
+            if (e.target.value) pingTyping(); else clearTyping();
+          }}
+          onBlur={clearTyping}
           onKeyDown={(e) => e.key === "Enter" && onSend()} placeholder="Мессеж бичих..."
           onFocus={() => {
             /* гар нээгдэж frame агшсаны дараа гулсана */
