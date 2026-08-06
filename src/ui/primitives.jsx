@@ -49,7 +49,9 @@ export function Pill({ children, onClick, active, color, className = "", ...rest
   );
 }
 
-export function Header({ title, sub, onBack }) {
+/* `action` — толгойн баруун захад тавих товч (жишээ нь хайлт). Нэр нь
+   тодорхой үйлдэл гэдгийг илэрхийлнэ; ямар ч зангуу биш. */
+export function Header({ title, sub, onBack, action }) {
   return (
     <div className="flex items-center gap-2.5 mb-5">
       {onBack && (
@@ -58,10 +60,11 @@ export function Header({ title, sub, onBack }) {
           <ChevronLeft size={19} strokeWidth={2} />
         </button>
       )}
-      <div>
+      <div className="min-w-0">
         <h1 className="text-[22px] font-extrabold leading-tight" style={{ color: C.ink }}>{title}</h1>
-        {sub && <p className="text-[12.5px] font-semibold" style={{ color: C.inkSoft }}>{sub}</p>}
+        {sub && <p className="text-[12.5px] font-semibold truncate" style={{ color: C.inkSoft }}>{sub}</p>}
       </div>
+      {action && <div className="ml-auto shrink-0">{action}</div>}
     </div>
   );
 }
