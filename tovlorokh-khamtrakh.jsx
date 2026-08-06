@@ -32,7 +32,7 @@ import { TZ, ubDay, ubParts, pad, DAYS } from "./src/lib/time.js";
 import { compressImage, compressDataUrl } from "./src/lib/image.js";
 import { REACTIONS, REACTION_GIFS, QUICK_REACTIONS } from "./src/lib/reactions.js";
 import {
-  chatTime, loadBlob, putBlob, useBlob, savedSnapshot, copyableText, writeClipboard,
+  loadBlob, putBlob, useBlob, savedSnapshot, copyableText, writeClipboard,
   durText, MessageBody, messagePreview,
 } from "./src/ui/message.jsx";
 import { SavedChatScreen } from "./src/screens/SavedChatScreen.jsx";
