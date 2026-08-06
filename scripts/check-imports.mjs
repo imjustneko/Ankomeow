@@ -36,6 +36,14 @@ function walk(dir, out = []) {
 const stripComments = (s) =>
   s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
+/* "Энэ файл нэрийг ашиглаж байна уу" гэдгийг шалгах биет.
+
+   import мөрүүдийг хасна: замын мөр өөрөө нэр агуулж болно
+   (`from "./useSwipeBack.js"` доторх useSwipeBack), тэр нь хэрэглээ БИШ.
+   Эс бөгөөс модулийг нэрийнх нь дагуу нэрлэсэн болгон өөрийгөө импортлоогүй
+   гэж буруутгагдана. */
+const usageBody = (s) => stripComments(s).replace(/^\s*import\s[\s\S]*?from\s*["'][^"']*["'];?/gm, "");
+
 const declared = (s) => {
   const out = new Set();
   const re = /^(?:export\s+)?(?:async\s+)?(?:function|const|let|var)\s+([A-Za-z_$][\w$]*)/gm;
@@ -119,7 +127,7 @@ for (const [f, s] of src) {
 
 for (const [f, s] of src) {
   const have = new Set([...declared(s), ...imported(s)]);
-  const body = stripComments(s);
+  const body = usageBody(s);
   const missing = [...owner]
     .filter(([n, from]) => from !== f && !have.has(n) && !IGNORE.has(n)
       && alone(n).test(body))
@@ -149,7 +157,7 @@ const EXTERNAL = {
 for (const [f, s] of src) {
   const have = imported(s);
   /* import мөрүүдийг өөрсдийг нь хасна — эс бөгөөс өөрийгөө олно */
-  const body = stripComments(s).replace(/^import .*$/gm, "");
+  const body = usageBody(s);
   for (const [mod, names] of Object.entries(EXTERNAL)) {
     const missing = names.filter((n) => !have.has(n)
       && new RegExp(`\\b${n}\\s*[.(]`).test(body));
