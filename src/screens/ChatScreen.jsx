@@ -15,6 +15,11 @@ import { groupMessages } from "../lib/chatGroup.js";
 import { compressImage } from "../lib/image.js";
 import { QUICK_REACTIONS, REACTIONS, REACTION_GIFS } from "../lib/reactions.js";
 
+/* Бөмбөлгийн булангийн радиус. Бүлгийн дунд байгаа булан нь MERGED болж
+   хумигдана — Instagram-ийн адил нэг урт бөмбөлөг мэт харагдуулна. */
+const BUBBLE_R = 18;
+const BUBBLE_R_MERGED = 6;
+
 export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedIds, onPartnerBubble }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
@@ -324,10 +329,10 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
             const myReaction = m.reactions?.[accountKey];
             const reactionList = Object.values(m.reactions || {});
             /* Бүлгийн дотоод булангууд нийлж, нэг урт бөмбөлөг мэт харагдана.
-               Бөмбөлөггүй зурвасууд (зурсан зураг, "санаж байна") үүнээс гадуур. */
-            const merge = bare ? null : mine
-              ? { borderTopRightRadius: groupStart ? 18 : 6, borderBottomRightRadius: groupEnd ? 18 : 6 }
-              : { borderTopLeftRadius: groupStart ? 18 : 6, borderBottomLeftRadius: groupEnd ? 18 : 6 };
+               Зөвхөн илгээгчийн талын булангууд нийлнэ — нөгөө тал нь бүтэн
+               дугуй хэвээр. Бөмбөлөггүй зурвас (зурсан зураг, "санаж байна")
+               өөрийн хэлбэртэй тул үүнээс гадуур. */
+            const side = mine ? "Right" : "Left";
             return (
               <div key={m.id} className={`flex flex-col ${mine ? "items-end" : "items-start"}`}
                 style={{ marginTop: groupStart ? 8 : 2 }}>
@@ -345,15 +350,17 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
                     if (m.id === lastPartnerId) lastPartnerBubbleRef.current = el;
                   }}
                   onClick={() => setReactingTo((id) => (id === m.id ? null : m.id))}
-                  className={`max-w-[75%] rounded-[18px] text-[13px] font-semibold cursor-pointer ${media && !m.replyTo ? "p-1.5" : "px-3.5 py-2.5"}`}
+                  className={`max-w-[75%] text-[13px] font-semibold cursor-pointer ${media && !m.replyTo ? "p-1.5" : "px-3.5 py-2.5"}`}
                   style={{
                     ...(bare
                       ? { background: "transparent", border: "none", padding: 0 }
                       : {
                         background: mine ? C.lilacDeep : C.card, color: mine ? "#fff" : C.ink,
                         border: mine ? "none" : `1.5px solid ${C.line}`,
+                        borderRadius: BUBBLE_R,
+                        [`borderTop${side}Radius`]: groupStart ? BUBBLE_R : BUBBLE_R_MERGED,
+                        [`borderBottom${side}Radius`]: groupEnd ? BUBBLE_R : BUBBLE_R_MERGED,
                       }),
-                    ...(merge || {}),
                     ...(flashId === m.id ? { outline: `2.5px solid ${C.gold}`, outlineOffset: 2 } : {}),
                     transition: "outline-color 300ms ease",
                   }}>
@@ -372,67 +379,68 @@ export function ChatScreen({ onBack, profileName, accountKey, partnerKey, savedI
                   <MessageBody m={m} mine={mine} />
                 </div>
 
-                {/* Зурвас бүрийн доор цаг бичихийг больсон тул дарахад л харуулна */}
-                {reactingTo === m.id && m.createdAt?.toDate && (
-                  <div className="text-[9.5px] font-bold mt-1 px-1" style={{ color: C.inkSoft }}>
-                    {chatStamp(m.createdAt.toDate())}
-                  </div>
-                )}
-
                 {reactingTo === m.id && (
-                  <div className="flex items-center gap-1 mt-1 px-1.5 py-1 rounded-full" style={{ background: C.card, border: `1.5px solid ${C.line}` }}>
-                    {QUICK_REACTIONS.map((e) => (
-                      <button key={e} onClick={() => react(m, e)}
-                        className="w-7 h-7 rounded-full flex items-center justify-center text-[15px] active:scale-90"
-                        style={{ background: myReaction === e ? C.cardIn : "transparent", transition: "transform 120ms ease" }}>
-                        {e}
-                      </button>
-                    ))}
-                    <div className="w-[1.5px] self-stretch my-0.5" style={{ background: C.line2 }} />
-                    <button onClick={() => startReply(m)}
-                      className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90"
-                      style={{ color: C.inkSoft, transition: "transform 120ms ease" }} aria-label="Хариулах">
-                      <Reply size={14} strokeWidth={2.2} />
-                    </button>
-                    <button onClick={() => toggleSave(m)}
-                      className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90"
-                      style={{ color: savedIds.has(m.id) ? C.lilacDeep : C.inkSoft, transition: "transform 120ms ease" }}
-                      aria-label={savedIds.has(m.id) ? "Хадгалснаас хасах" : "Хадгалах"}>
-                      {savedIds.has(m.id)
-                        ? <BookmarkCheck size={14} strokeWidth={2.4} />
-                        : <Bookmark size={14} strokeWidth={2.2} />}
-                    </button>
-                    {draw && (
-                      <button onClick={() => saveSticker(m.strokes || [])}
+                  <>
+                    {/* Зурвас бүрийн доор цаг бичихийг больсон тул дарахад л харуулна */}
+                    {m.createdAt?.toDate && (
+                      <div className="text-[9.5px] font-bold mt-1 px-1" style={{ color: C.inkSoft }}>
+                        {chatStamp(m.createdAt.toDate())}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-1 mt-1 px-1.5 py-1 rounded-full" style={{ background: C.card, border: `1.5px solid ${C.line}` }}>
+                      {QUICK_REACTIONS.map((e) => (
+                        <button key={e} onClick={() => react(m, e)}
+                          className="w-7 h-7 rounded-full flex items-center justify-center text-[15px] active:scale-90"
+                          style={{ background: myReaction === e ? C.cardIn : "transparent", transition: "transform 120ms ease" }}>
+                          {e}
+                        </button>
+                      ))}
+                      <div className="w-[1.5px] self-stretch my-0.5" style={{ background: C.line2 }} />
+                      <button onClick={() => startReply(m)}
                         className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90"
-                        style={{ color: C.inkSoft, transition: "transform 120ms ease" }}
-                        aria-label="Sticker болгож хадгалах">
-                        <Sticker size={14} strokeWidth={2.2} />
+                        style={{ color: C.inkSoft, transition: "transform 120ms ease" }} aria-label="Хариулах">
+                        <Reply size={14} strokeWidth={2.2} />
                       </button>
-                    )}
-                    {copyableText(m) && (
-                      <>
-                        <button onClick={() => copyMessage(m)}
+                      <button onClick={() => toggleSave(m)}
+                        className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90"
+                        style={{ color: savedIds.has(m.id) ? C.lilacDeep : C.inkSoft, transition: "transform 120ms ease" }}
+                        aria-label={savedIds.has(m.id) ? "Хадгалснаас хасах" : "Хадгалах"}>
+                        {savedIds.has(m.id)
+                          ? <BookmarkCheck size={14} strokeWidth={2.4} />
+                          : <Bookmark size={14} strokeWidth={2.2} />}
+                      </button>
+                      {draw && (
+                        <button onClick={() => saveSticker(m.strokes || [])}
                           className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90"
-                          style={{ color: copiedId === m.id ? C.waterDeep : C.inkSoft, transition: "transform 120ms ease" }}
-                          aria-label={copiedId === m.id ? "Хуулагдлаа" : "Хуулах"}>
-                          {copiedId === m.id
-                            ? <Check size={14} strokeWidth={2.6} />
-                            : <Copy size={14} strokeWidth={2.2} />}
+                          style={{ color: C.inkSoft, transition: "transform 120ms ease" }}
+                          aria-label="Sticker болгож хадгалах">
+                          <Sticker size={14} strokeWidth={2.2} />
                         </button>
-                      </>
-                    )}
-                    {mine && (
-                      <>
-                        <div className="w-[1.5px] self-stretch my-0.5" style={{ background: C.line2 }} />
-                        <button onClick={() => deleteMessage(m.id)}
-                          className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90"
-                          style={{ color: C.peachDeep, transition: "transform 120ms ease" }} aria-label="Устгах">
-                          <Trash2 size={14} strokeWidth={2.2} />
-                        </button>
-                      </>
-                    )}
-                  </div>
+                      )}
+                      {copyableText(m) && (
+                        <>
+                          <button onClick={() => copyMessage(m)}
+                            className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90"
+                            style={{ color: copiedId === m.id ? C.waterDeep : C.inkSoft, transition: "transform 120ms ease" }}
+                            aria-label={copiedId === m.id ? "Хуулагдлаа" : "Хуулах"}>
+                            {copiedId === m.id
+                              ? <Check size={14} strokeWidth={2.6} />
+                              : <Copy size={14} strokeWidth={2.2} />}
+                          </button>
+                        </>
+                      )}
+                      {mine && (
+                        <>
+                          <div className="w-[1.5px] self-stretch my-0.5" style={{ background: C.line2 }} />
+                          <button onClick={() => deleteMessage(m.id)}
+                            className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90"
+                            style={{ color: C.peachDeep, transition: "transform 120ms ease" }} aria-label="Устгах">
+                            <Trash2 size={14} strokeWidth={2.2} />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </>
                 )}
 
                 {reactionList.length > 0 && (

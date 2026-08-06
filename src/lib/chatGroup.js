@@ -8,8 +8,8 @@
    Бүлэг нь нэг хүний ойрхон илгээсэн зурвасуудыг нэгтгэнэ — нэр нэг л удаа
    бичигдэж, булангууд нийлж, зай нь нягтарна. */
 
-export const STAMP_GAP_MS = 60 * 60 * 1000; /* 1 цаг */
-export const GROUP_GAP_MS = 5 * 60 * 1000;  /* 5 минут */
+const STAMP_GAP_MS = 60 * 60 * 1000; /* 1 цаг */
+const GROUP_GAP_MS = 5 * 60 * 1000;  /* 5 минут */
 
 /* Илгээгдэж яваа зурвасын serverTimestamp нь эхэндээ null байдаг тул цаг нь
    мэдэгдэхгүй байж болно. Тийм үед завсрыг мэдэх аргагүй — шинэ тэмдэглэгээ
@@ -26,15 +26,17 @@ export function groupMessages(messages, dayKey) {
     return t - p > STAMP_GAP_MS || dayKey(new Date(t)) !== dayKey(new Date(p));
   });
 
-  const near = (i, j) => {
-    const a = at[i], b = at[j];
-    return a == null || b == null ? true : Math.abs(b - a) <= GROUP_GAP_MS;
+  /* i ба i+1 хоёр зэргэлдээ зурвас нэг бүлэгт багтах хэмжээний ойрхон уу */
+  const near = (i) => {
+    const a = at[i], b = at[i + 1];
+    return a == null || b == null || b - a <= GROUP_GAP_MS;
   };
 
+  /* stamp[0] нь үргэлж true тул эхний зурвас автоматаар бүлгийн эхлэл болно */
   return messages.map((m, i) => ({
     m,
     stamp: stamp[i],
-    groupStart: stamp[i] || i === 0 || messages[i - 1].sender !== m.sender || !near(i - 1, i),
-    groupEnd: i === messages.length - 1 || stamp[i + 1] || messages[i + 1].sender !== m.sender || !near(i, i + 1),
+    groupStart: stamp[i] || messages[i - 1].sender !== m.sender || !near(i - 1),
+    groupEnd: i === messages.length - 1 || stamp[i + 1] || messages[i + 1].sender !== m.sender || !near(i),
   }));
 }
